@@ -32,22 +32,30 @@ def get_auth_service(settings: Annotated[Settings, Depends(get_settings)]) -> Au
 def get_model_service(settings: Annotated[Settings, Depends(get_settings)]) -> ModelService:
     return ModelService(
         model_repository=ModelRepository(settings.database_path),
-        ollama_client=OllamaClient(settings.ollama_base_url),
+        ollama_client=OllamaClient(
+            settings.ollama_base_url,
+            timeout_seconds=settings.ollama_timeout_seconds,
+        ),
     )
 
 
 def get_chat_proxy_service(
     settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
 ) -> ChatProxyService:
     usage_repository = UsageRepository(settings.database_path)
     return ChatProxyService(
         model_repository=ModelRepository(settings.database_path),
-        ollama_client=OllamaClient(settings.ollama_base_url),
+        ollama_client=OllamaClient(
+            settings.ollama_base_url,
+            timeout_seconds=settings.ollama_timeout_seconds,
+        ),
         usage_repository=usage_repository,
         limit_service=LimitService(
             limit_repository=LimitRepository(settings.database_path),
             usage_repository=usage_repository,
         ),
+        ollama_concurrency_limiter=request.app.state.ollama_concurrency_limiter,
     )
 
 

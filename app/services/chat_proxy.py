@@ -1,7 +1,9 @@
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
 from time import perf_counter
+from types import TracebackType
 from typing import Any
 
 from app.clients.ollama import OllamaClient
@@ -14,6 +16,36 @@ from app.services.limits import LimitService
 logger = logging.getLogger(__name__)
 
 
+class OllamaConcurrencyLimiter:
+    def __init__(self, max_concurrency: int) -> None:
+        self._semaphore = asyncio.Semaphore(max(max_concurrency, 1))
+
+    async def __aenter__(self) -> None:
+        await self._semaphore.acquire()
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        _ = exc_type, exc, traceback
+        self._semaphore.release()
+
+
+class _NoopOllamaConcurrencyLimiter:
+    async def __aenter__(self) -> None:
+        return None
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        _ = exc_type, exc, traceback
+
+
 class ChatProxyService:
     def __init__(
         self,
@@ -21,11 +53,15 @@ class ChatProxyService:
         ollama_client: OllamaClient,
         usage_repository: UsageRepository,
         limit_service: LimitService,
+        ollama_concurrency_limiter: OllamaConcurrencyLimiter | None = None,
     ) -> None:
         self._model_repository = model_repository
         self._ollama_client = ollama_client
         self._usage_repository = usage_repository
         self._limit_service = limit_service
+        self._ollama_concurrency_limiter = (
+            ollama_concurrency_limiter or _NoopOllamaConcurrencyLimiter()
+        )
 
     async def create_chat_completion(
         self, user: User, request_body: dict[str, Any]
@@ -48,7 +84,10 @@ class ChatProxyService:
 
         started_at = perf_counter()
         try:
-            response_body = await self._ollama_client.create_chat_completion(request_body)
+            async with self._ollama_concurrency_limiter:
+                response_body = await self._ollama_client.create_chat_completion(
+                    request_body
+                )
         except UpstreamServiceError:
             latency_ms = (perf_counter() - started_at) * 1000
             logger.error(
@@ -100,13 +139,16 @@ class ChatProxyService:
         pending_text = ""
 
         try:
-            async for chunk in self._ollama_client.stream_chat_completion(stream_payload):
-                pending_text, usage = self._capture_stream_usage(
-                    chunk=chunk,
-                    pending_text=pending_text,
-                    usage=usage,
-                )
-                yield chunk
+            async with self._ollama_concurrency_limiter:
+                async for chunk in self._ollama_client.stream_chat_completion(
+                    stream_payload
+                ):
+                    pending_text, usage = self._capture_stream_usage(
+                        chunk=chunk,
+                        pending_text=pending_text,
+                        usage=usage,
+                    )
+                    yield chunk
         except UpstreamServiceError:
             latency_ms = (perf_counter() - started_at) * 1000
             logger.error(

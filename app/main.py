@@ -10,6 +10,7 @@ from app.config import Settings
 from app.config import settings as default_settings
 from app.db import initialize_database
 from app.errors import ClientRequestError, UpstreamServiceError
+from app.services.chat_proxy import OllamaConcurrencyLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +21,17 @@ def create_app(settings: Settings = default_settings) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         initialize_database(settings.database_path)
+        app.state.ollama_concurrency_limiter = OllamaConcurrencyLimiter(
+            settings.ollama_max_concurrency
+        )
         logger.info(
             "proxy.startup",
             extra={
                 "app_name": settings.app_name,
                 "database_path": str(settings.database_path),
                 "ollama_base_url": settings.ollama_base_url,
+                "ollama_timeout_seconds": settings.ollama_timeout_seconds,
+                "ollama_max_concurrency": settings.ollama_max_concurrency,
                 "max_request_body_bytes": settings.max_request_body_bytes,
             },
         )
