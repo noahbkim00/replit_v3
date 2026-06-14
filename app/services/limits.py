@@ -1,9 +1,12 @@
+import logging
 from typing import Any
 
 from app.errors import ClientRequestError
 from app.repositories.limits import LimitRepository, UserLimits
 from app.repositories.usage import UsageRepository
 from app.repositories.users import User
+
+logger = logging.getLogger(__name__)
 
 
 class LimitService:
@@ -58,6 +61,15 @@ class LimitService:
             user_id=user_id, seconds=60
         )
         if recent_requests >= limits.requests_per_minute:
+            logger.warning(
+                "limit.rejected",
+                extra={
+                    "user_id": user_id,
+                    "limit_type": "requests_per_minute",
+                    "recent_requests": recent_requests,
+                    "limit": limits.requests_per_minute,
+                },
+            )
             raise ClientRequestError(
                 "Request rate limit exceeded",
                 status_code=429,
@@ -67,28 +79,43 @@ class LimitService:
     def _check_token_caps(
         self, user_id: str, limits: UserLimits, estimated_tokens: int
     ) -> None:
-        if (
-            limits.daily_tokens is not None
-            and self._usage_repository.sum_successful_tokens_today(user_id)
-            + estimated_tokens
-            > limits.daily_tokens
-        ):
-            raise ClientRequestError(
-                "Token limit exceeded for daily_tokens",
-                status_code=429,
-                error_type="rate_limit_exceeded",
-            )
+        if limits.daily_tokens is not None:
+            daily_tokens = self._usage_repository.sum_successful_tokens_today(user_id)
+            if daily_tokens + estimated_tokens > limits.daily_tokens:
+                logger.warning(
+                    "limit.rejected",
+                    extra={
+                        "user_id": user_id,
+                        "limit_type": "daily_tokens",
+                        "current_tokens": daily_tokens,
+                        "estimated_tokens": estimated_tokens,
+                        "limit": limits.daily_tokens,
+                    },
+                )
+                raise ClientRequestError(
+                    "Token limit exceeded for daily_tokens",
+                    status_code=429,
+                    error_type="rate_limit_exceeded",
+                )
 
-        if (
-            limits.total_tokens is not None
-            and self._usage_repository.sum_successful_tokens(user_id) + estimated_tokens
-            > limits.total_tokens
-        ):
-            raise ClientRequestError(
-                "Token limit exceeded for total_tokens",
-                status_code=429,
-                error_type="rate_limit_exceeded",
-            )
+        if limits.total_tokens is not None:
+            total_tokens = self._usage_repository.sum_successful_tokens(user_id)
+            if total_tokens + estimated_tokens > limits.total_tokens:
+                logger.warning(
+                    "limit.rejected",
+                    extra={
+                        "user_id": user_id,
+                        "limit_type": "total_tokens",
+                        "current_tokens": total_tokens,
+                        "estimated_tokens": estimated_tokens,
+                        "limit": limits.total_tokens,
+                    },
+                )
+                raise ClientRequestError(
+                    "Token limit exceeded for total_tokens",
+                    status_code=429,
+                    error_type="rate_limit_exceeded",
+                )
 
     def _estimated_tokens(self, request_body: dict[str, Any]) -> int:
         max_tokens = request_body.get("max_tokens")

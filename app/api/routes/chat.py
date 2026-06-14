@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
@@ -9,6 +10,8 @@ from app.config import Settings
 from app.errors import ClientRequestError
 from app.repositories.users import User
 from app.services.chat_proxy import ChatProxyService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -36,13 +39,39 @@ async def _read_json_body(
     request: Request, max_request_body_bytes: int
 ) -> dict[str, Any]:
     content_length = request.headers.get("content-length")
-    if content_length is not None and int(content_length) > max_request_body_bytes:
+    try:
+        content_length_value = (
+            int(content_length) if content_length is not None else None
+        )
+    except ValueError:
+        content_length_value = None
+
+    if (
+        content_length_value is not None
+        and content_length_value > max_request_body_bytes
+    ):
+        logger.warning(
+            "chat.rejected",
+            extra={
+                "reason": "body_too_large",
+                "limit_bytes": max_request_body_bytes,
+                "content_length": content_length_value,
+            },
+        )
         raise ClientRequestError(
             "Request body exceeds the configured size limit", status_code=413
         )
 
     body = await request.body()
     if len(body) > max_request_body_bytes:
+        logger.warning(
+            "chat.rejected",
+            extra={
+                "reason": "body_too_large",
+                "limit_bytes": max_request_body_bytes,
+                "content_length": content_length_value,
+            },
+        )
         raise ClientRequestError(
             "Request body exceeds the configured size limit", status_code=413
         )
@@ -50,9 +79,11 @@ async def _read_json_body(
     try:
         payload = json.loads(body)
     except json.JSONDecodeError as exc:
+        logger.warning("chat.rejected", extra={"reason": "invalid_json"})
         raise ClientRequestError("Request body must be valid JSON") from exc
 
     if not isinstance(payload, dict):
+        logger.warning("chat.rejected", extra={"reason": "body_not_object"})
         raise ClientRequestError("Request body must be a JSON object")
 
     return payload

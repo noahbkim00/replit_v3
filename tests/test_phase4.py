@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 from typing import Any
 
@@ -114,7 +115,7 @@ def test_user_usage_endpoints_only_return_authenticated_users_usage(
     assert user_b_usage.json()["aggregate"]["total_tokens"] == 5
 
 
-def test_admin_can_set_get_limits_and_view_a_users_usage(tmp_path, monkeypatch):
+def test_admin_can_set_get_limits_and_view_a_users_usage(tmp_path, monkeypatch, caplog):
     app, _database_path = seeded_app(tmp_path)
 
     async def fake_create_chat_completion(self, payload):
@@ -138,6 +139,7 @@ def test_admin_can_set_get_limits_and_view_a_users_usage(tmp_path, monkeypatch):
 
     monkeypatch.setattr(OllamaClient, "create_chat_completion", fake_create_chat_completion)
 
+    caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
         non_admin_response = client.put(
             "/admin/users/user_a/limits",
@@ -178,10 +180,16 @@ def test_admin_can_set_get_limits_and_view_a_users_usage(tmp_path, monkeypatch):
     assert usage_response.status_code == 200
     assert usage_response.json()["user_id"] == "user_a"
     assert usage_response.json()["aggregate"]["total_tokens"] == 10
+    forbidden_records = [
+        record for record in caplog.records if record.message == "auth.forbidden"
+    ]
+    assert len(forbidden_records) == 1
+    assert forbidden_records[0].user_id == "user_a"
+    assert "dev-token-user-a" not in caplog.text
 
 
 def test_requests_per_minute_limit_rejects_before_calling_ollama_and_is_not_billed(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, caplog
 ):
     app, database_path = seeded_app(tmp_path)
     calls = 0
@@ -209,6 +217,7 @@ def test_requests_per_minute_limit_rejects_before_calling_ollama_and_is_not_bill
 
     monkeypatch.setattr(OllamaClient, "create_chat_completion", fake_create_chat_completion)
 
+    caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
         assert client.put(
             "/admin/users/user_a/limits",
@@ -233,10 +242,20 @@ def test_requests_per_minute_limit_rejects_before_calling_ollama_and_is_not_bill
     assert usage_rows(database_path) == [
         ("user_a", "llama3.2:1b", 1, 1, 2, "success")
     ]
+    limit_records = [
+        record for record in caplog.records if record.message == "limit.rejected"
+    ]
+    assert len(limit_records) == 1
+    assert limit_records[0].user_id == "user_a"
+    assert limit_records[0].limit_type == "requests_per_minute"
+    assert limit_records[0].recent_requests == 1
+    assert limit_records[0].limit == 1
+    assert "hello" not in caplog.text
+    assert "dev-token-user-a" not in caplog.text
 
 
 def test_token_limit_uses_max_tokens_projection_before_calling_ollama(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, caplog
 ):
     app, database_path = seeded_app(tmp_path)
     calls = 0
@@ -264,6 +283,7 @@ def test_token_limit_uses_max_tokens_projection_before_calling_ollama(
 
     monkeypatch.setattr(OllamaClient, "create_chat_completion", fake_create_chat_completion)
 
+    caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
         assert client.post(
             "/v1/chat/completions",
@@ -289,3 +309,13 @@ def test_token_limit_uses_max_tokens_projection_before_calling_ollama(
     assert usage_rows(database_path) == [
         ("user_a", "llama3.2:1b", 4, 6, 10, "success")
     ]
+    limit_records = [
+        record for record in caplog.records if record.message == "limit.rejected"
+    ]
+    assert len(limit_records) == 1
+    assert limit_records[0].user_id == "user_a"
+    assert limit_records[0].limit_type == "daily_tokens"
+    assert limit_records[0].current_tokens == 10
+    assert limit_records[0].estimated_tokens == 3
+    assert limit_records[0].limit == 12
+    assert "hello" not in caplog.text

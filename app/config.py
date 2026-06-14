@@ -11,6 +11,7 @@ class Settings(BaseModel):
     database_path: Path = Field(default=Path("data/proxy.sqlite3"))
     ollama_base_url: str = Field(default="http://localhost:11434/v1")
     max_request_body_bytes: int = Field(default=8 * 1024 * 1024)
+    log_level: str = Field(default="INFO")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -28,6 +29,7 @@ class Settings(BaseModel):
                     str(cls.model_fields["max_request_body_bytes"].default),
                 )
             ),
+            log_level=os.getenv("LOG_LEVEL", cls.model_fields["log_level"].default),
         )
 
 

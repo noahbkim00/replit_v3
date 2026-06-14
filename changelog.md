@@ -1,5 +1,57 @@
 # Changelog
 
+## Changes Logged on Empty — Minimal Logging
+
+### Changes Made
+
+- Added `LOG_LEVEL` support through `Settings.log_level` while keeping the default
+  at `INFO`.
+- Configured stdlib logging in `create_app` and added a `proxy.startup` event after
+  database initialization with non-secret configuration sanity fields.
+- Added aggregate-safe auth logs for missing/invalid bearer auth and non-admin
+  admin-route attempts.
+- Added `chat.rejected` logs for oversized bodies, invalid JSON, and non-object
+  JSON without logging raw request bodies.
+- Added `limit.rejected` logs for request-per-minute, daily-token, and total-token
+  rejections with safe limit counters.
+- Added Ollama client failure logs for network/timeouts, HTTP status failures,
+  invalid JSON, and invalid response shapes using endpoint names only.
+- Added high-level non-streaming and streaming chat logs for success, expected
+  client failures, upstream failures, stream completion with usage, and stream
+  completion without usage.
+- Added focused `caplog` assertions across Phase 0 through Phase 4 tests to verify
+  expected log events and absence of bearer tokens, prompts, raw bodies, streamed
+  chunk content, and base64 snippets.
+- Updated `testing.md` with automated logging checks, manual log capture commands,
+  expected event names, and explicit sensitive-content grep checks.
+
+### Verification Steps Performed
+
+- `python3 -m pytest tests/test_phase0.py tests/test_phase1.py tests/test_phase2.py
+  tests/test_phase3.py tests/test_phase4.py -q` failed before implementation with
+  17 missing-log assertion failures.
+- `python3 -m pytest tests/test_phase0.py tests/test_phase1.py tests/test_phase2.py
+  tests/test_phase3.py tests/test_phase4.py -q` passed after implementation with
+  25 tests.
+- `python3 -m ruff check app tests` initially failed on a stale unused
+  `UpstreamServiceError` import in `tests/test_phase1.py`.
+- `python3 -m ruff check app tests` passed after removing the stale import.
+- `python3 -m pytest -q` passed with 28 tests.
+- `python3 -m ruff check .` passed.
+
+### Deviations From the Plan
+
+- No implementation deviations from `docs/minimal_logging_plan.md`.
+- The optional local Uvicorn smoke check was documented in `testing.md` but not run
+  as part of this automated verification pass.
+
+### Deviation Rationale
+
+- The local smoke check depends on running a long-lived server and local Ollama
+  state. The automated tests cover the logging paths with mocked upstream behavior
+  and an upstream-unavailable client path, while `testing.md` provides exact manual
+  commands for local inspection.
+
 ## Changes Logged on Empty — Phase 5
 
 ### Changes Made

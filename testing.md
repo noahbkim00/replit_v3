@@ -8,6 +8,85 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
 
+## Minimal Logging Checks
+
+Run the focused automated logging checks:
+
+```bash
+python -m pytest tests/test_phase0.py tests/test_phase1.py tests/test_phase2.py tests/test_phase3.py tests/test_phase4.py -q
+python -m pytest
+python -m ruff check .
+```
+
+These tests use `caplog` to verify the expected event names and safe metadata for
+startup, auth failures, request-body rejections, limit rejections, upstream Ollama
+failures, non-streaming chat success/failure, and streaming completion/failure.
+They also assert that bearer tokens, prompt text, raw invalid bodies, streamed chunk
+content, and base64 image snippets do not appear in captured logs.
+
+For a manual local log inspection, use a temporary database and capture Uvicorn
+stdout/stderr:
+
+```bash
+DATABASE_PATH=/tmp/replit-v3-logging.sqlite3 python scripts/seed_dev_data.py
+
+DATABASE_PATH=/tmp/replit-v3-logging.sqlite3 \
+LOG_LEVEL=INFO \
+uvicorn app.main:app --host 127.0.0.1 --port 8000 2>&1 \
+  | tee /tmp/replit-v3-logging.log
+```
+
+In another terminal, generate a startup event, an auth failure, and a request-body
+rejection:
+
+```bash
+curl -i http://127.0.0.1:8000/v1/models
+
+curl -i http://127.0.0.1:8000/v1/chat/completions \
+  -H "Authorization: Bearer not-a-token" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama3.2:1b","messages":[{"role":"user","content":"secret prompt"}]}'
+
+curl -i http://127.0.0.1:8000/v1/chat/completions \
+  -H "Authorization: Bearer dev-token-user-a" \
+  -H "Content-Type: application/json" \
+  -d '{not-json'
+```
+
+Inspect the captured log for expected event names:
+
+```bash
+grep -E "proxy.startup|auth.failure|chat.rejected" /tmp/replit-v3-logging.log
+```
+
+The log should include event names and safe operational fields such as `user_id`,
+model, status class, token counts, limits, endpoint names, and latency. It should
+not include bearer token values, `Authorization` headers, raw prompts, raw request
+bodies, raw response bodies, streamed chunk content, or base64 image data. Check
+the captured file for common leaks:
+
+```bash
+grep -E "dev-token|not-a-token|Authorization|secret prompt|\\{not-json|data:image|base64" \
+  /tmp/replit-v3-logging.log \
+  && echo "unexpected sensitive log content found" \
+  || echo "no sensitive log content found"
+```
+
+If Ollama is running and `llama3.2:1b` is available, create a successful chat
+completion and confirm `chat.completed` appears without the prompt:
+
+```bash
+curl -i http://127.0.0.1:8000/v1/chat/completions \
+  -H "Authorization: Bearer dev-token-user-a" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama3.2:1b","messages":[{"role":"user","content":"What is 2+2?"}],"max_tokens":8}'
+
+grep "chat.completed" /tmp/replit-v3-logging.log
+grep -E "What is 2\\+2\\?|dev-token-user-a|Authorization" /tmp/replit-v3-logging.log \
+  && echo "unexpected sensitive chat log content found" \
+  || echo "no sensitive chat log content found"
+```
+
 ## Phase 0 Checks
 
 ```bash

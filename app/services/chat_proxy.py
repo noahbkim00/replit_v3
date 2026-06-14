@@ -1,14 +1,17 @@
 import json
+import logging
 from collections.abc import AsyncIterator
 from time import perf_counter
 from typing import Any
 
 from app.clients.ollama import OllamaClient
-from app.errors import ClientRequestError
+from app.errors import ClientRequestError, UpstreamServiceError
 from app.repositories.models import ModelRepository
 from app.repositories.usage import TokenUsage, UsageRepository
 from app.repositories.users import User
 from app.services.limits import LimitService
+
+logger = logging.getLogger(__name__)
 
 
 class ChatProxyService:
@@ -27,19 +30,63 @@ class ChatProxyService:
     async def create_chat_completion(
         self, user: User, request_body: dict[str, Any]
     ) -> dict[str, Any]:
-        model = self._validate_request(request_body)
-        self._limit_service.check_chat_request(user, model, request_body)
+        try:
+            model = self._validate_request(request_body)
+            self._limit_service.check_chat_request(user, model, request_body)
+        except ClientRequestError as exc:
+            logger.warning(
+                "chat.failed",
+                extra={
+                    "user_id": user.id,
+                    "model": self._safe_model(request_body),
+                    "stream": False,
+                    "error_type": exc.error_type,
+                    "status_code": exc.status_code,
+                },
+            )
+            raise
 
         started_at = perf_counter()
-        response_body = await self._ollama_client.create_chat_completion(request_body)
+        try:
+            response_body = await self._ollama_client.create_chat_completion(
+                request_body
+            )
+        except UpstreamServiceError:
+            latency_ms = (perf_counter() - started_at) * 1000
+            logger.error(
+                "chat.failed",
+                extra={
+                    "user_id": user.id,
+                    "model": model,
+                    "stream": False,
+                    "error_type": "upstream_error",
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+            raise
+
         latency_ms = (perf_counter() - started_at) * 1000
+        usage = self._extract_usage(response_body)
 
         self._usage_repository.record_chat_completion(
             user_id=user.id,
             model=model,
-            usage=self._extract_usage(response_body),
+            usage=usage,
             latency_ms=latency_ms,
             status="success",
+        )
+        logger.info(
+            "chat.completed",
+            extra={
+                "user_id": user.id,
+                "model": model,
+                "stream": False,
+                "status": "success",
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+                "latency_ms": round(latency_ms, 2),
+            },
         )
         return response_body
 
@@ -54,22 +101,58 @@ class ChatProxyService:
         usage: TokenUsage | None = None
         pending_text = ""
 
-        async for chunk in self._ollama_client.stream_chat_completion(stream_payload):
-            pending_text, usage = self._capture_stream_usage(
-                chunk=chunk,
-                pending_text=pending_text,
-                usage=usage,
-            )
-            yield chunk
-
-        if usage is not None:
+        try:
+            async for chunk in self._ollama_client.stream_chat_completion(
+                stream_payload
+            ):
+                pending_text, usage = self._capture_stream_usage(
+                    chunk=chunk,
+                    pending_text=pending_text,
+                    usage=usage,
+                )
+                yield chunk
+        except UpstreamServiceError:
             latency_ms = (perf_counter() - started_at) * 1000
+            logger.error(
+                "chat.stream_failed",
+                extra={
+                    "user_id": user.id,
+                    "model": model,
+                    "error_type": "upstream_error",
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+            raise
+
+        latency_ms = (perf_counter() - started_at) * 1000
+        if usage is not None:
             self._usage_repository.record_chat_completion(
                 user_id=user.id,
                 model=model,
                 usage=usage,
                 latency_ms=latency_ms,
                 status="success",
+            )
+            logger.info(
+                "chat.stream_completed",
+                extra={
+                    "user_id": user.id,
+                    "model": model,
+                    "stream": True,
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens,
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+        else:
+            logger.warning(
+                "chat.stream_completed_without_usage",
+                extra={
+                    "user_id": user.id,
+                    "model": model,
+                    "latency_ms": round(latency_ms, 2),
+                },
             )
 
     def is_streaming_request(self, request_body: dict[str, Any]) -> bool:
@@ -86,6 +169,12 @@ class ChatProxyService:
 
         self._validate_vision_content(request_body)
         return model
+
+    def _safe_model(self, request_body: dict[str, Any]) -> str | None:
+        model = request_body.get("model")
+        if isinstance(model, str):
+            return model
+        return None
 
     def _with_stream_usage(self, request_body: dict[str, Any]) -> dict[str, Any]:
         stream_options = request_body.get("stream_options")

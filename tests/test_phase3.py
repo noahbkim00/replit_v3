@@ -1,4 +1,5 @@
 import json
+import logging
 import sqlite3
 from typing import Any
 
@@ -49,7 +50,7 @@ def sse_chunk(payload: dict[str, Any]) -> bytes:
 
 
 def test_streaming_chat_forwards_incremental_chunks_and_records_final_usage(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, caplog
 ):
     app, database_path = seeded_app(tmp_path)
     forwarded_payloads: list[dict[str, Any]] = []
@@ -96,6 +97,7 @@ def test_streaming_chat_forwards_incremental_chunks_and_records_final_usage(
         "messages": [{"role": "user", "content": "Say hello"}],
         "stream": True,
     }
+    caplog.set_level(logging.INFO)
     with TestClient(app) as client:
         with client.stream(
             "POST",
@@ -122,9 +124,24 @@ def test_streaming_chat_forwards_incremental_chunks_and_records_final_usage(
     assert usage_totals(database_path) == [
         ("user_a", "llama3.2:1b", 7, 2, 9, 1)
     ]
+    stream_records = [
+        record
+        for record in caplog.records
+        if record.message == "chat.stream_completed"
+    ]
+    assert len(stream_records) == 1
+    stream_record = stream_records[0]
+    assert stream_record.user_id == "user_a"
+    assert stream_record.model == "llama3.2:1b"
+    assert stream_record.stream is True
+    assert stream_record.prompt_tokens == 7
+    assert stream_record.completion_tokens == 2
+    assert stream_record.total_tokens == 9
+    assert "Say hello" not in caplog.text
+    assert '"content": "he"' not in caplog.text
 
 
-def test_streaming_chat_merges_existing_stream_options(tmp_path, monkeypatch):
+def test_streaming_chat_merges_existing_stream_options(tmp_path, monkeypatch, caplog):
     app, _database_path = seeded_app(tmp_path)
     forwarded_payloads: list[dict[str, Any]] = []
 
@@ -136,6 +153,7 @@ def test_streaming_chat_merges_existing_stream_options(tmp_path, monkeypatch):
         OllamaClient, "stream_chat_completion", fake_stream_chat_completion
     )
 
+    caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
         response = client.post(
             "/chat/completions",
@@ -157,9 +175,18 @@ def test_streaming_chat_merges_existing_stream_options(tmp_path, monkeypatch):
             "stream_options": {"foo": "bar", "include_usage": True},
         }
     ]
+    no_usage_records = [
+        record
+        for record in caplog.records
+        if record.message == "chat.stream_completed_without_usage"
+    ]
+    assert len(no_usage_records) == 1
+    assert no_usage_records[0].user_id == "user_a"
+    assert no_usage_records[0].model == "llama3.2:1b"
+    assert "hello" not in caplog.text
 
 
-def test_interrupted_stream_does_not_record_usage(tmp_path, monkeypatch):
+def test_interrupted_stream_does_not_record_usage(tmp_path, monkeypatch, caplog):
     app, database_path = seeded_app(tmp_path)
 
     async def fake_stream_chat_completion(self, payload):
@@ -176,6 +203,7 @@ def test_interrupted_stream_does_not_record_usage(tmp_path, monkeypatch):
         OllamaClient, "stream_chat_completion", fake_stream_chat_completion
     )
 
+    caplog.set_level(logging.ERROR)
     with TestClient(app, raise_server_exceptions=False) as client:
         with client.stream(
             "POST",
@@ -190,10 +218,19 @@ def test_interrupted_stream_does_not_record_usage(tmp_path, monkeypatch):
             list(response.iter_bytes())
 
     assert usage_rows(database_path) == []
+    failed_records = [
+        record for record in caplog.records if record.message == "chat.stream_failed"
+    ]
+    assert len(failed_records) == 1
+    assert failed_records[0].user_id == "user_a"
+    assert failed_records[0].model == "llama3.2:1b"
+    assert failed_records[0].error_type == "upstream_error"
+    assert "partial" not in caplog.text
+    assert "hello" not in caplog.text
 
 
 def test_vision_request_accepts_base64_data_url_and_forwards_to_moondream(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, caplog
 ):
     app, database_path = seeded_app(tmp_path)
     forwarded_payloads: list[dict[str, Any]] = []
@@ -238,6 +275,7 @@ def test_vision_request_accepts_base64_data_url_and_forwards_to_moondream(
         ],
         "max_tokens": 32,
     }
+    caplog.set_level(logging.INFO)
     with TestClient(app) as client:
         response = client.post(
             "/v1/chat/completions",
@@ -248,6 +286,13 @@ def test_vision_request_accepts_base64_data_url_and_forwards_to_moondream(
     assert response.status_code == 200
     assert forwarded_payloads == [request_payload]
     assert usage_rows(database_path) == [("user_a", "moondream", 20, 4, 24, "success")]
+    completion_records = [
+        record for record in caplog.records if record.message == "chat.completed"
+    ]
+    assert len(completion_records) == 1
+    assert completion_records[0].model == "moondream"
+    assert "What is in this image?" not in caplog.text
+    assert "iVBORw0KGgo=" not in caplog.text
 
 
 def test_vision_request_rejects_remote_image_urls_without_calling_ollama(
@@ -297,7 +342,7 @@ def test_vision_request_rejects_remote_image_urls_without_calling_ollama(
 
 
 def test_chat_request_body_size_limit_is_enforced_before_ollama(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, caplog
 ):
     app, database_path = seeded_app(tmp_path, max_request_body_bytes=120)
     calls = 0
@@ -309,6 +354,7 @@ def test_chat_request_body_size_limit_is_enforced_before_ollama(
 
     monkeypatch.setattr(OllamaClient, "create_chat_completion", fake_create_chat_completion)
 
+    caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
         response = client.post(
             "/v1/chat/completions",
@@ -328,11 +374,19 @@ def test_chat_request_body_size_limit_is_enforced_before_ollama(
     }
     assert calls == 0
     assert usage_rows(database_path) == []
+    rejection_records = [
+        record for record in caplog.records if record.message == "chat.rejected"
+    ]
+    assert len(rejection_records) == 1
+    assert rejection_records[0].reason == "body_too_large"
+    assert rejection_records[0].limit_bytes == 120
+    assert "x" * 20 not in caplog.text
 
 
-def test_invalid_json_returns_clean_client_error(tmp_path):
+def test_invalid_json_returns_clean_client_error(tmp_path, caplog):
     app, _database_path = seeded_app(tmp_path)
 
+    caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
         response = client.post(
             "/v1/chat/completions",
@@ -350,3 +404,40 @@ def test_invalid_json_returns_clean_client_error(tmp_path):
             "type": "invalid_request_error",
         }
     }
+    rejection_records = [
+        record for record in caplog.records if record.message == "chat.rejected"
+    ]
+    assert len(rejection_records) == 1
+    assert rejection_records[0].reason == "invalid_json"
+    assert "{not-json" not in caplog.text
+
+
+def test_non_object_json_returns_clean_client_error_and_logs_rejection(
+    tmp_path, caplog
+):
+    app, _database_path = seeded_app(tmp_path)
+
+    caplog.set_level(logging.WARNING)
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            headers={
+                "Authorization": "Bearer dev-token-user-a",
+                "Content-Type": "application/json",
+            },
+            content=b'["not-an-object"]',
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": {
+            "message": "Request body must be a JSON object",
+            "type": "invalid_request_error",
+        }
+    }
+    rejection_records = [
+        record for record in caplog.records if record.message == "chat.rejected"
+    ]
+    assert len(rejection_records) == 1
+    assert rejection_records[0].reason == "body_not_object"
+    assert "not-an-object" not in caplog.text

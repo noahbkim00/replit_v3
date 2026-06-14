@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -14,6 +15,8 @@ from app.services.chat_proxy import ChatProxyService
 from app.services.limits import LimitService
 from app.services.models import ModelService
 from app.services.usage import UsageService
+
+logger = logging.getLogger(__name__)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -64,6 +67,7 @@ async def require_user(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> User:
     if credentials is None or credentials.scheme.lower() != "bearer":
+        logger.warning("auth.failure", extra={"reason": "missing_bearer"})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing bearer token",
@@ -72,6 +76,7 @@ async def require_user(
 
     user = auth_service.authenticate(credentials.credentials)
     if user is None:
+        logger.warning("auth.failure", extra={"reason": "invalid_token"})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid bearer token",
@@ -83,6 +88,7 @@ async def require_user(
 
 async def require_admin(user: Annotated[User, Depends(require_user)]) -> User:
     if not user.is_admin:
+        logger.warning("auth.forbidden", extra={"user_id": user.id})
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin credentials required",

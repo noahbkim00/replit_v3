@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -10,11 +11,26 @@ from app.config import settings as default_settings
 from app.db import initialize_database
 from app.errors import ClientRequestError, UpstreamServiceError
 
+logger = logging.getLogger(__name__)
+
 
 def create_app(settings: Settings = default_settings) -> FastAPI:
+    logging.basicConfig(
+        level=getattr(logging, settings.log_level.upper(), logging.INFO)
+    )
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         initialize_database(settings.database_path)
+        logger.info(
+            "proxy.startup",
+            extra={
+                "app_name": settings.app_name,
+                "database_path": str(settings.database_path),
+                "ollama_base_url": settings.ollama_base_url,
+                "max_request_body_bytes": settings.max_request_body_bytes,
+            },
+        )
         yield
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
