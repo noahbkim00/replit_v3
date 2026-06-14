@@ -1,1 +1,2 @@
-"""Persistence repositories."""
+"""SQLite repository package."""
+

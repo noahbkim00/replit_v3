@@ -1,3 +1,2 @@
-from fastapi import APIRouter
+"""Usage routes will be added in Phase 4."""
 
-router = APIRouter(tags=["usage"])

@@ -1,1 +1,2 @@
-"""FastAPI Ollama proxy application package."""
+"""FastAPI Ollama proxy package."""
+

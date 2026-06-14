@@ -1,39 +1,19 @@
 # FastAPI Ollama Proxy
 
-Phase 0 establishes the runnable FastAPI skeleton for the Ollama proxy take-home.
+Phase 0 project skeleton for the Replit take-home assignment.
 
-## Local Setup
-
-Install dependencies and run the test suite:
+## Run
 
 ```bash
-uv run pytest
-uv run ruff check .
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Run the API locally:
-
-```bash
-uv run uvicorn app.main:app --port 8000
-```
-
-Verify the smoke endpoint:
+Then check:
 
 ```bash
 curl http://localhost:8000/healthz
 ```
 
-Expected response:
-
-```json
-{"status":"ok"}
-```
-
-## Ollama Prerequisites
-
-Later proxy phases require local Ollama models:
-
-```bash
-ollama pull llama3.2
-ollama pull moondream
-```

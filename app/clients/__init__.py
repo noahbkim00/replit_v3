@@ -1,1 +1,2 @@
-"""External service clients."""
+"""Upstream client package."""
+

@@ -1,3 +1,2 @@
-from fastapi import APIRouter
+"""Chat completion routes will be added in Phase 2."""
 
-router = APIRouter(tags=["chat"])
