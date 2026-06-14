@@ -1,7 +1,8 @@
-import sqlite3
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+
+from app.db import connect_database
 
 
 @dataclass(frozen=True)
@@ -25,7 +26,7 @@ class UserRepository:
 
     def get_user_by_api_token(self, token: str) -> User | None:
         token_hash = hash_api_token(token)
-        with sqlite3.connect(self._database_path) as connection:
+        with connect_database(self._database_path) as connection:
             row = connection.execute(
                 """
                 SELECT users.id, users.display_name, users.role
@@ -46,7 +47,7 @@ class UserRepository:
     def upsert_user(
         self, user_id: str, display_name: str, role: str = "user"
     ) -> None:
-        with sqlite3.connect(self._database_path) as connection:
+        with connect_database(self._database_path) as connection:
             connection.execute(
                 """
                 INSERT INTO users (id, display_name, role, is_active)
@@ -60,7 +61,7 @@ class UserRepository:
             )
 
     def upsert_api_token(self, token_id: str, user_id: str, token: str, name: str) -> None:
-        with sqlite3.connect(self._database_path) as connection:
+        with connect_database(self._database_path) as connection:
             connection.execute(
                 """
                 INSERT INTO api_tokens (id, user_id, token_hash, name, is_active)

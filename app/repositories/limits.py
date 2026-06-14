@@ -1,6 +1,7 @@
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+
+from app.db import connect_database
 
 
 @dataclass(frozen=True)
@@ -16,7 +17,7 @@ class LimitRepository:
         self._database_path = database_path
 
     def get_user_limits(self, user_id: str) -> UserLimits:
-        with sqlite3.connect(self._database_path) as connection:
+        with connect_database(self._database_path) as connection:
             row = connection.execute(
                 """
                 SELECT user_id, requests_per_minute, daily_tokens, total_tokens
@@ -48,7 +49,7 @@ class LimitRepository:
         daily_tokens: int | None,
         total_tokens: int | None,
     ) -> UserLimits:
-        with sqlite3.connect(self._database_path) as connection:
+        with connect_database(self._database_path) as connection:
             connection.execute(
                 """
                 INSERT INTO user_limits (

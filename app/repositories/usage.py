@@ -1,7 +1,8 @@
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from app.db import connect_database
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class UsageRepository:
         latency_ms: float,
         status: str,
     ) -> None:
-        with sqlite3.connect(self._database_path) as connection:
+        with connect_database(self._database_path) as connection:
             connection.execute(
                 """
                 INSERT INTO usage_events (
@@ -75,7 +76,7 @@ class UsageRepository:
             )
 
     def get_usage_summary(self, user_id: str) -> dict[str, Any]:
-        with sqlite3.connect(self._database_path) as connection:
+        with connect_database(self._database_path) as connection:
             rows = connection.execute(
                 """
                 SELECT
@@ -115,7 +116,7 @@ class UsageRepository:
         }
 
     def list_usage_events(self, user_id: str) -> list[dict[str, Any]]:
-        with sqlite3.connect(self._database_path) as connection:
+        with connect_database(self._database_path) as connection:
             rows = connection.execute(
                 """
                 SELECT
@@ -151,7 +152,7 @@ class UsageRepository:
         ]
 
     def count_recent_successful_requests(self, user_id: str, seconds: int) -> int:
-        with sqlite3.connect(self._database_path) as connection:
+        with connect_database(self._database_path) as connection:
             row = connection.execute(
                 """
                 SELECT COUNT(*)
@@ -166,7 +167,7 @@ class UsageRepository:
         return int(row[0])
 
     def sum_successful_tokens_today(self, user_id: str) -> int:
-        with sqlite3.connect(self._database_path) as connection:
+        with connect_database(self._database_path) as connection:
             row = connection.execute(
                 """
                 SELECT COALESCE(SUM(total_tokens), 0)
@@ -181,7 +182,7 @@ class UsageRepository:
         return int(row[0])
 
     def sum_successful_tokens(self, user_id: str) -> int:
-        with sqlite3.connect(self._database_path) as connection:
+        with connect_database(self._database_path) as connection:
             row = connection.execute(
                 """
                 SELECT COALESCE(SUM(total_tokens), 0)
