@@ -35,21 +35,14 @@ async def create_chat_completion(
     return await chat_proxy_service.create_chat_completion(user, request_body)
 
 
-async def _read_json_body(
-    request: Request, max_request_body_bytes: int
-) -> dict[str, Any]:
+async def _read_json_body(request: Request, max_request_body_bytes: int) -> dict[str, Any]:
     content_length = request.headers.get("content-length")
     try:
-        content_length_value = (
-            int(content_length) if content_length is not None else None
-        )
+        content_length_value = int(content_length) if content_length is not None else None
     except ValueError:
         content_length_value = None
 
-    if (
-        content_length_value is not None
-        and content_length_value > max_request_body_bytes
-    ):
+    if content_length_value is not None and content_length_value > max_request_body_bytes:
         logger.warning(
             "chat.rejected",
             extra={
@@ -58,9 +51,7 @@ async def _read_json_body(
                 "content_length": content_length_value,
             },
         )
-        raise ClientRequestError(
-            "Request body exceeds the configured size limit", status_code=413
-        )
+        raise ClientRequestError("Request body exceeds the configured size limit", status_code=413)
 
     body = await request.body()
     if len(body) > max_request_body_bytes:
@@ -72,9 +63,7 @@ async def _read_json_body(
                 "content_length": content_length_value,
             },
         )
-        raise ClientRequestError(
-            "Request body exceeds the configured size limit", status_code=413
-        )
+        raise ClientRequestError("Request body exceeds the configured size limit", status_code=413)
 
     try:
         payload = json.loads(body)

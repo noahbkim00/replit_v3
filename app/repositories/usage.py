@@ -106,9 +106,7 @@ class UsageRepository:
             "user_id": user_id,
             "aggregate": {
                 "prompt_tokens": sum(model["prompt_tokens"] for model in models),
-                "completion_tokens": sum(
-                    model["completion_tokens"] for model in models
-                ),
+                "completion_tokens": sum(model["completion_tokens"] for model in models),
                 "total_tokens": sum(model["total_tokens"] for model in models),
                 "request_count": sum(model["request_count"] for model in models),
             },

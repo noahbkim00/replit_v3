@@ -48,9 +48,7 @@ class ChatProxyService:
 
         started_at = perf_counter()
         try:
-            response_body = await self._ollama_client.create_chat_completion(
-                request_body
-            )
+            response_body = await self._ollama_client.create_chat_completion(request_body)
         except UpstreamServiceError:
             latency_ms = (perf_counter() - started_at) * 1000
             logger.error(
@@ -102,9 +100,7 @@ class ChatProxyService:
         pending_text = ""
 
         try:
-            async for chunk in self._ollama_client.stream_chat_completion(
-                stream_payload
-            ):
+            async for chunk in self._ollama_client.stream_chat_completion(stream_payload):
                 pending_text, usage = self._capture_stream_usage(
                     chunk=chunk,
                     pending_text=pending_text,
@@ -245,9 +241,7 @@ class ChatProxyService:
             raise ClientRequestError("image_url content must include a url")
 
         if not url.startswith("data:image/") or ";base64," not in url:
-            raise ClientRequestError(
-                "Remote image URLs are not supported; send a base64 data URL"
-            )
+            raise ClientRequestError("Remote image URLs are not supported; send a base64 data URL")
 
     def _extract_usage(self, response_body: dict[str, Any]) -> TokenUsage:
         usage = response_body.get("usage")

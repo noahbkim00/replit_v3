@@ -86,15 +86,9 @@ def test_chat_completion_forwards_non_streaming_request_and_records_usage(
     assert response.status_code == 200
     assert response.json()["choices"][0]["message"]["content"] == "4"
     assert forwarded_payloads == [request_payload]
-    assert usage_rows(database_path) == [
-        ("user_a", "llama3.2:1b", 12, 3, 15, "success")
-    ]
-    assert usage_totals(database_path) == [
-        ("user_a", "llama3.2:1b", 12, 3, 15, 1)
-    ]
-    completion_records = [
-        record for record in caplog.records if record.message == "chat.completed"
-    ]
+    assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 12, 3, 15, "success")]
+    assert usage_totals(database_path) == [("user_a", "llama3.2:1b", 12, 3, 15, 1)]
+    completion_records = [record for record in caplog.records if record.message == "chat.completed"]
     assert len(completion_records) == 1
     completion_record = completion_records[0]
     assert completion_record.user_id == "user_a"
@@ -151,9 +145,7 @@ def test_chat_completion_compatibility_route_records_totals_per_user_and_model(
     assert usage_totals(database_path) == [("user_b", "llama3.2", 8, 4, 12, 2)]
 
 
-def test_chat_completion_rejects_disallowed_model_without_billing(
-    tmp_path, monkeypatch, caplog
-):
+def test_chat_completion_rejects_disallowed_model_without_billing(tmp_path, monkeypatch, caplog):
     app, database_path = seeded_app(tmp_path)
     calls = 0
 
@@ -184,9 +176,7 @@ def test_chat_completion_rejects_disallowed_model_without_billing(
     }
     assert calls == 0
     assert usage_rows(database_path) == []
-    failed_records = [
-        record for record in caplog.records if record.message == "chat.failed"
-    ]
+    failed_records = [record for record in caplog.records if record.message == "chat.failed"]
     assert len(failed_records) == 1
     assert failed_records[0].user_id == "user_a"
     assert failed_records[0].model == "not-allowed"
@@ -221,9 +211,7 @@ def test_chat_completion_invalid_auth_is_not_billed(tmp_path, monkeypatch, caplo
     assert response.status_code == 401
     assert calls == 0
     assert usage_rows(database_path) == []
-    auth_failures = [
-        record for record in caplog.records if record.message == "auth.failure"
-    ]
+    auth_failures = [record for record in caplog.records if record.message == "auth.failure"]
     assert len(auth_failures) == 1
     assert auth_failures[0].reason == "invalid_token"
     assert "invalid" not in caplog.text
@@ -251,9 +239,7 @@ def test_chat_completion_upstream_failure_is_not_billed(tmp_path, monkeypatch, c
 
     assert response.status_code == 502
     assert usage_rows(database_path) == []
-    failed_records = [
-        record for record in caplog.records if record.message == "chat.failed"
-    ]
+    failed_records = [record for record in caplog.records if record.message == "chat.failed"]
     assert len(failed_records) == 1
     assert failed_records[0].user_id == "user_a"
     assert failed_records[0].model == "llama3.2:1b"

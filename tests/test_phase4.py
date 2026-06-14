@@ -41,9 +41,7 @@ def chat_payload(max_tokens: int = 8) -> dict[str, Any]:
     }
 
 
-def test_user_usage_endpoints_only_return_authenticated_users_usage(
-    tmp_path, monkeypatch
-):
+def test_user_usage_endpoints_only_return_authenticated_users_usage(tmp_path, monkeypatch):
     app, _database_path = seeded_app(tmp_path)
 
     async def fake_create_chat_completion(self, payload):
@@ -68,21 +66,25 @@ def test_user_usage_endpoints_only_return_authenticated_users_usage(
     monkeypatch.setattr(OllamaClient, "create_chat_completion", fake_create_chat_completion)
 
     with TestClient(app) as client:
-        assert client.post(
-            "/v1/chat/completions",
-            headers=user_headers("dev-token-user-a"),
-            json=chat_payload(),
-        ).status_code == 200
-        assert client.post(
-            "/v1/chat/completions",
-            headers=user_headers("dev-token-user-b"),
-            json=chat_payload(),
-        ).status_code == 200
+        assert (
+            client.post(
+                "/v1/chat/completions",
+                headers=user_headers("dev-token-user-a"),
+                json=chat_payload(),
+            ).status_code
+            == 200
+        )
+        assert (
+            client.post(
+                "/v1/chat/completions",
+                headers=user_headers("dev-token-user-b"),
+                json=chat_payload(),
+            ).status_code
+            == 200
+        )
 
         user_a_usage = client.get("/usage", headers=user_headers("dev-token-user-a"))
-        user_a_events = client.get(
-            "/usage/events", headers=user_headers("dev-token-user-a")
-        )
+        user_a_events = client.get("/usage/events", headers=user_headers("dev-token-user-a"))
         user_b_usage = client.get("/usage", headers=user_headers("dev-token-user-b"))
 
     assert user_a_usage.status_code == 200
@@ -158,11 +160,14 @@ def test_admin_can_set_get_limits_and_view_a_users_usage(tmp_path, monkeypatch, 
         get_response = client.get(
             "/admin/users/user_a/limits", headers=user_headers("dev-token-admin")
         )
-        assert client.post(
-            "/v1/chat/completions",
-            headers=user_headers("dev-token-user-a"),
-            json=chat_payload(),
-        ).status_code == 200
+        assert (
+            client.post(
+                "/v1/chat/completions",
+                headers=user_headers("dev-token-user-a"),
+                json=chat_payload(),
+            ).status_code
+            == 200
+        )
         usage_response = client.get(
             "/admin/users/user_a/usage", headers=user_headers("dev-token-admin")
         )
@@ -180,9 +185,7 @@ def test_admin_can_set_get_limits_and_view_a_users_usage(tmp_path, monkeypatch, 
     assert usage_response.status_code == 200
     assert usage_response.json()["user_id"] == "user_a"
     assert usage_response.json()["aggregate"]["total_tokens"] == 10
-    forbidden_records = [
-        record for record in caplog.records if record.message == "auth.forbidden"
-    ]
+    forbidden_records = [record for record in caplog.records if record.message == "auth.forbidden"]
     assert len(forbidden_records) == 1
     assert forbidden_records[0].user_id == "user_a"
     assert "dev-token-user-a" not in caplog.text
@@ -219,11 +222,14 @@ def test_requests_per_minute_limit_rejects_before_calling_ollama_and_is_not_bill
 
     caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
-        assert client.put(
-            "/admin/users/user_a/limits",
-            headers=user_headers("dev-token-admin"),
-            json={"requests_per_minute": 1},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/admin/users/user_a/limits",
+                headers=user_headers("dev-token-admin"),
+                json={"requests_per_minute": 1},
+            ).status_code
+            == 200
+        )
         first_response = client.post(
             "/v1/chat/completions",
             headers=user_headers("dev-token-user-a"),
@@ -239,12 +245,8 @@ def test_requests_per_minute_limit_rejects_before_calling_ollama_and_is_not_bill
     assert rejected_response.status_code == 429
     assert rejected_response.json()["error"]["type"] == "rate_limit_exceeded"
     assert calls == 1
-    assert usage_rows(database_path) == [
-        ("user_a", "llama3.2:1b", 1, 1, 2, "success")
-    ]
-    limit_records = [
-        record for record in caplog.records if record.message == "limit.rejected"
-    ]
+    assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 1, 1, 2, "success")]
+    limit_records = [record for record in caplog.records if record.message == "limit.rejected"]
     assert len(limit_records) == 1
     assert limit_records[0].user_id == "user_a"
     assert limit_records[0].limit_type == "requests_per_minute"
@@ -285,16 +287,22 @@ def test_token_limit_uses_max_tokens_projection_before_calling_ollama(
 
     caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
-        assert client.post(
-            "/v1/chat/completions",
-            headers=user_headers("dev-token-user-a"),
-            json=chat_payload(max_tokens=10),
-        ).status_code == 200
-        assert client.put(
-            "/admin/users/user_a/limits",
-            headers=user_headers("dev-token-admin"),
-            json={"daily_tokens": 12, "total_tokens": 12},
-        ).status_code == 200
+        assert (
+            client.post(
+                "/v1/chat/completions",
+                headers=user_headers("dev-token-user-a"),
+                json=chat_payload(max_tokens=10),
+            ).status_code
+            == 200
+        )
+        assert (
+            client.put(
+                "/admin/users/user_a/limits",
+                headers=user_headers("dev-token-admin"),
+                json={"daily_tokens": 12, "total_tokens": 12},
+            ).status_code
+            == 200
+        )
         rejected_response = client.post(
             "/v1/chat/completions",
             headers=user_headers("dev-token-user-a"),
@@ -302,16 +310,10 @@ def test_token_limit_uses_max_tokens_projection_before_calling_ollama(
         )
 
     assert rejected_response.status_code == 429
-    assert rejected_response.json()["error"]["message"] == (
-        "Token limit exceeded for daily_tokens"
-    )
+    assert rejected_response.json()["error"]["message"] == ("Token limit exceeded for daily_tokens")
     assert calls == 1
-    assert usage_rows(database_path) == [
-        ("user_a", "llama3.2:1b", 4, 6, 10, "success")
-    ]
-    limit_records = [
-        record for record in caplog.records if record.message == "limit.rejected"
-    ]
+    assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 4, 6, 10, "success")]
+    limit_records = [record for record in caplog.records if record.message == "limit.rejected"]
     assert len(limit_records) == 1
     assert limit_records[0].user_id == "user_a"
     assert limit_records[0].limit_type == "daily_tokens"

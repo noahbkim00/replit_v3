@@ -88,9 +88,7 @@ def test_streaming_chat_forwards_incremental_chunks_and_records_final_usage(
         )
         yield b"data: [DONE]\n\n"
 
-    monkeypatch.setattr(
-        OllamaClient, "stream_chat_completion", fake_stream_chat_completion
-    )
+    monkeypatch.setattr(OllamaClient, "stream_chat_completion", fake_stream_chat_completion)
 
     request_payload = {
         "model": "llama3.2:1b",
@@ -118,16 +116,10 @@ def test_streaming_chat_forwards_incremental_chunks_and_records_final_usage(
             "stream_options": {"include_usage": True},
         }
     ]
-    assert usage_rows(database_path) == [
-        ("user_a", "llama3.2:1b", 7, 2, 9, "success")
-    ]
-    assert usage_totals(database_path) == [
-        ("user_a", "llama3.2:1b", 7, 2, 9, 1)
-    ]
+    assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 7, 2, 9, "success")]
+    assert usage_totals(database_path) == [("user_a", "llama3.2:1b", 7, 2, 9, 1)]
     stream_records = [
-        record
-        for record in caplog.records
-        if record.message == "chat.stream_completed"
+        record for record in caplog.records if record.message == "chat.stream_completed"
     ]
     assert len(stream_records) == 1
     stream_record = stream_records[0]
@@ -149,9 +141,7 @@ def test_streaming_chat_merges_existing_stream_options(tmp_path, monkeypatch, ca
         forwarded_payloads.append(payload)
         yield b"data: [DONE]\n\n"
 
-    monkeypatch.setattr(
-        OllamaClient, "stream_chat_completion", fake_stream_chat_completion
-    )
+    monkeypatch.setattr(OllamaClient, "stream_chat_completion", fake_stream_chat_completion)
 
     caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
@@ -199,9 +189,7 @@ def test_interrupted_stream_does_not_record_usage(tmp_path, monkeypatch, caplog)
         )
         raise UpstreamServiceError("Ollama stream interrupted")
 
-    monkeypatch.setattr(
-        OllamaClient, "stream_chat_completion", fake_stream_chat_completion
-    )
+    monkeypatch.setattr(OllamaClient, "stream_chat_completion", fake_stream_chat_completion)
 
     caplog.set_level(logging.ERROR)
     with TestClient(app, raise_server_exceptions=False) as client:
@@ -218,9 +206,7 @@ def test_interrupted_stream_does_not_record_usage(tmp_path, monkeypatch, caplog)
             list(response.iter_bytes())
 
     assert usage_rows(database_path) == []
-    failed_records = [
-        record for record in caplog.records if record.message == "chat.stream_failed"
-    ]
+    failed_records = [record for record in caplog.records if record.message == "chat.stream_failed"]
     assert len(failed_records) == 1
     assert failed_records[0].user_id == "user_a"
     assert failed_records[0].model == "llama3.2:1b"
@@ -286,18 +272,14 @@ def test_vision_request_accepts_base64_data_url_and_forwards_to_moondream(
     assert response.status_code == 200
     assert forwarded_payloads == [request_payload]
     assert usage_rows(database_path) == [("user_a", "moondream", 20, 4, 24, "success")]
-    completion_records = [
-        record for record in caplog.records if record.message == "chat.completed"
-    ]
+    completion_records = [record for record in caplog.records if record.message == "chat.completed"]
     assert len(completion_records) == 1
     assert completion_records[0].model == "moondream"
     assert "What is in this image?" not in caplog.text
     assert "iVBORw0KGgo=" not in caplog.text
 
 
-def test_vision_request_rejects_remote_image_urls_without_calling_ollama(
-    tmp_path, monkeypatch
-):
+def test_vision_request_rejects_remote_image_urls_without_calling_ollama(tmp_path, monkeypatch):
     app, database_path = seeded_app(tmp_path)
     calls = 0
 
@@ -320,9 +302,7 @@ def test_vision_request_rejects_remote_image_urls_without_calling_ollama(
                         "content": [
                             {
                                 "type": "image_url",
-                                "image_url": {
-                                    "url": "https://picsum.photos/seed/replit/320/240"
-                                },
+                                "image_url": {"url": "https://picsum.photos/seed/replit/320/240"},
                             }
                         ],
                     }
@@ -341,9 +321,7 @@ def test_vision_request_rejects_remote_image_urls_without_calling_ollama(
     assert usage_rows(database_path) == []
 
 
-def test_chat_request_body_size_limit_is_enforced_before_ollama(
-    tmp_path, monkeypatch, caplog
-):
+def test_chat_request_body_size_limit_is_enforced_before_ollama(tmp_path, monkeypatch, caplog):
     app, database_path = seeded_app(tmp_path, max_request_body_bytes=120)
     calls = 0
 
@@ -374,9 +352,7 @@ def test_chat_request_body_size_limit_is_enforced_before_ollama(
     }
     assert calls == 0
     assert usage_rows(database_path) == []
-    rejection_records = [
-        record for record in caplog.records if record.message == "chat.rejected"
-    ]
+    rejection_records = [record for record in caplog.records if record.message == "chat.rejected"]
     assert len(rejection_records) == 1
     assert rejection_records[0].reason == "body_too_large"
     assert rejection_records[0].limit_bytes == 120
@@ -404,17 +380,13 @@ def test_invalid_json_returns_clean_client_error(tmp_path, caplog):
             "type": "invalid_request_error",
         }
     }
-    rejection_records = [
-        record for record in caplog.records if record.message == "chat.rejected"
-    ]
+    rejection_records = [record for record in caplog.records if record.message == "chat.rejected"]
     assert len(rejection_records) == 1
     assert rejection_records[0].reason == "invalid_json"
     assert "{not-json" not in caplog.text
 
 
-def test_non_object_json_returns_clean_client_error_and_logs_rejection(
-    tmp_path, caplog
-):
+def test_non_object_json_returns_clean_client_error_and_logs_rejection(tmp_path, caplog):
     app, _database_path = seeded_app(tmp_path)
 
     caplog.set_level(logging.WARNING)
@@ -435,9 +407,7 @@ def test_non_object_json_returns_clean_client_error_and_logs_rejection(
             "type": "invalid_request_error",
         }
     }
-    rejection_records = [
-        record for record in caplog.records if record.message == "chat.rejected"
-    ]
+    rejection_records = [record for record in caplog.records if record.message == "chat.rejected"]
     assert len(rejection_records) == 1
     assert rejection_records[0].reason == "body_not_object"
     assert "not-an-object" not in caplog.text

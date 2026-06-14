@@ -6,9 +6,7 @@ from app.repositories.models import ModelRepository
 
 
 class ModelService:
-    def __init__(
-        self, model_repository: ModelRepository, ollama_client: OllamaClient
-    ) -> None:
+    def __init__(self, model_repository: ModelRepository, ollama_client: OllamaClient) -> None:
         self._model_repository = model_repository
         self._ollama_client = ollama_client
 

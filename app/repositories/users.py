@@ -44,9 +44,7 @@ class UserRepository:
 
         return User(id=row[0], display_name=row[1], role=row[2])
 
-    def upsert_user(
-        self, user_id: str, display_name: str, role: str = "user"
-    ) -> None:
+    def upsert_user(self, user_id: str, display_name: str, role: str = "user") -> None:
         with connect_database(self._database_path) as connection:
             connection.execute(
                 """

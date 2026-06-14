@@ -23,9 +23,7 @@ def test_seed_dev_data_creates_users_tokens_and_model_allowlist(tmp_path):
     seed_dev_data(database_path)
 
     with sqlite3.connect(database_path) as connection:
-        users = connection.execute(
-            "SELECT id, role FROM users ORDER BY id"
-        ).fetchall()
+        users = connection.execute("SELECT id, role FROM users ORDER BY id").fetchall()
         token_count = connection.execute("SELECT COUNT(*) FROM api_tokens").fetchone()
         allowed_models = connection.execute(
             "SELECT model_id FROM model_allowlist ORDER BY model_id"
@@ -78,9 +76,7 @@ def test_models_endpoint_rejects_missing_and_invalid_tokens(tmp_path, caplog):
 
     assert missing_response.status_code == 401
     assert invalid_response.status_code == 401
-    auth_failures = [
-        record for record in caplog.records if record.message == "auth.failure"
-    ]
+    auth_failures = [record for record in caplog.records if record.message == "auth.failure"]
     assert [record.reason for record in auth_failures] == [
         "missing_bearer",
         "invalid_token",
@@ -111,9 +107,7 @@ def test_models_routes_forward_to_ollama_and_filter_to_allowlist(tmp_path, monke
     monkeypatch.setattr(OllamaClient, "list_models", fake_list_models)
 
     with TestClient(app) as client:
-        v1_response = client.get(
-            "/v1/models", headers={"Authorization": "Bearer dev-token-user-a"}
-        )
+        v1_response = client.get("/v1/models", headers={"Authorization": "Bearer dev-token-user-a"})
         compatibility_response = client.get(
             "/models", headers={"Authorization": "Bearer dev-token-user-a"}
         )
@@ -142,9 +136,7 @@ def test_models_endpoint_returns_clean_error_when_ollama_is_unavailable(tmp_path
 
     caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
-        response = client.get(
-            "/v1/models", headers={"Authorization": "Bearer dev-token-user-a"}
-        )
+        response = client.get("/v1/models", headers={"Authorization": "Bearer dev-token-user-a"})
 
     assert response.status_code == 502
     assert response.json() == {
@@ -154,9 +146,7 @@ def test_models_endpoint_returns_clean_error_when_ollama_is_unavailable(tmp_path
         }
     }
     upstream_failures = [
-        record
-        for record in caplog.records
-        if record.message == "ollama.request_failed"
+        record for record in caplog.records if record.message == "ollama.request_failed"
     ]
     assert len(upstream_failures) == 1
     assert upstream_failures[0].endpoint == "/models"

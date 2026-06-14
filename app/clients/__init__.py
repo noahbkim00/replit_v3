@@ -1,2 +1,1 @@
 """Upstream client package."""
-

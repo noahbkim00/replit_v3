@@ -18,9 +18,7 @@ def test_healthz_returns_ok_and_logs_startup_without_secrets(tmp_path, caplog):
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
-    startup_records = [
-        record for record in caplog.records if record.message == "proxy.startup"
-    ]
+    startup_records = [record for record in caplog.records if record.message == "proxy.startup"]
     assert len(startup_records) == 1
     startup_record = startup_records[0]
     assert startup_record.app_name == "fastapi-ollama-proxy"

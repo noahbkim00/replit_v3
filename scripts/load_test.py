@@ -164,9 +164,7 @@ async def run_load_test(args: argparse.Namespace) -> tuple[LoadTestSummary, dict
     return summary, comparisons
 
 
-async def _run_requests(
-    client: httpx.AsyncClient, args: argparse.Namespace
-) -> list[RequestResult]:
+async def _run_requests(client: httpx.AsyncClient, args: argparse.Namespace) -> list[RequestResult]:
     queue: asyncio.Queue[int] = asyncio.Queue()
     for request_index in range(max(args.requests, 0)):
         queue.put_nowait(request_index)

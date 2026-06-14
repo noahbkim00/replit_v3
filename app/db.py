@@ -41,13 +41,9 @@ def initialize_database(database_path: Path) -> None:
             )
             """
         )
-        user_columns = {
-            row[1] for row in connection.execute("PRAGMA table_info(users)").fetchall()
-        }
+        user_columns = {row[1] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
         if "role" not in user_columns:
-            connection.execute(
-                "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"
-            )
+            connection.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS api_tokens (

@@ -15,9 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_app(settings: Settings = default_settings) -> FastAPI:
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO)
-    )
+    logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -38,18 +36,14 @@ def create_app(settings: Settings = default_settings) -> FastAPI:
     app.include_router(api_router)
 
     @app.exception_handler(UpstreamServiceError)
-    async def upstream_error_handler(
-        _: Request, exc: UpstreamServiceError
-    ) -> JSONResponse:
+    async def upstream_error_handler(_: Request, exc: UpstreamServiceError) -> JSONResponse:
         return JSONResponse(
             status_code=502,
             content={"error": {"message": str(exc), "type": "upstream_error"}},
         )
 
     @app.exception_handler(ClientRequestError)
-    async def client_request_error_handler(
-        _: Request, exc: ClientRequestError
-    ) -> JSONResponse:
+    async def client_request_error_handler(_: Request, exc: ClientRequestError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": {"message": str(exc), "type": exc.error_type}},

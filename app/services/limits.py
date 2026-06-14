@@ -18,9 +18,7 @@ class LimitService:
         self._limit_repository = limit_repository
         self._usage_repository = usage_repository
 
-    def check_chat_request(
-        self, user: User, model: str, request_body: dict[str, Any]
-    ) -> None:
+    def check_chat_request(self, user: User, model: str, request_body: dict[str, Any]) -> None:
         _ = model
         limits = self._limit_repository.get_user_limits(user.id)
         self._check_request_rate(user.id, limits)
@@ -76,9 +74,7 @@ class LimitService:
                 error_type="rate_limit_exceeded",
             )
 
-    def _check_token_caps(
-        self, user_id: str, limits: UserLimits, estimated_tokens: int
-    ) -> None:
+    def _check_token_caps(self, user_id: str, limits: UserLimits, estimated_tokens: int) -> None:
         if limits.daily_tokens is not None:
             daily_tokens = self._usage_repository.sum_successful_tokens_today(user_id)
             if daily_tokens + estimated_tokens > limits.daily_tokens:

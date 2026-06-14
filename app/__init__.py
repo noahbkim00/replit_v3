@@ -1,2 +1,1 @@
 """FastAPI Ollama proxy package."""
-
