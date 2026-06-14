@@ -1,5 +1,78 @@
 # Changelog
 
+## Changes Logged on Empty — Phase 3
+
+### Changes Made
+
+- Added configurable chat request body limiting with an 8 MiB default for local
+  base64 image-data use.
+- Changed the chat route to parse and size-check raw JSON before handing request
+  bodies to the chat proxy service.
+- Added `OllamaClient.stream_chat_completion()` for streaming
+  `POST /chat/completions` responses from Ollama.
+- Added streaming support for `POST /v1/chat/completions` and
+  `POST /chat/completions` using `StreamingResponse`.
+- Forced `stream_options.include_usage=true` for streaming requests while preserving
+  other client-provided stream options.
+- Added SSE usage extraction for streaming responses and records at most one usage
+  event after a completed stream when Ollama provides final usage.
+- Preserved non-streaming chat behavior and usage recording.
+- Added OpenAI-style vision message validation for `image_url` parts, accepting
+  base64 data URLs and rejecting remote image URLs without downloading them.
+- Added focused Phase 3 tests in `tests/test_phase3.py`.
+- Removed the obsolete Phase 2 test and documentation that expected `stream=true`
+  to be rejected.
+- Updated `testing.md` with Phase 3 automated checks, streaming OpenAI-client and
+  curl examples, SQLite usage checks, and a Lorem Picsum base64 data-URL vision
+  demo for `moondream`.
+
+### Verification Steps Performed
+
+- `python3 -m pytest tests/test_phase3.py -q` failed before implementation with
+  missing `OllamaClient.stream_chat_completion`, missing remote-image validation,
+  missing body-size enforcement, and default FastAPI invalid-JSON handling.
+- `python3 -m pytest tests/test_phase3.py -q` passed after implementation with
+  7 tests.
+- `python3 -m pytest -q` initially failed because the obsolete Phase 2
+  stream-rejection test still expected `400`.
+- `python3 -m pytest -q` passed after updating the stale Phase 2 test suite with
+  19 tests.
+- `python3 -m ruff check .` initially failed on import ordering in
+  `app/services/chat_proxy.py`.
+- `python3 -m ruff check app/services/chat_proxy.py` passed after fixing the import
+  order.
+- `python3 -m pytest -q` passed with 19 tests.
+- `python3 -m ruff check .` passed.
+- `DATABASE_PATH=/tmp/replit-v3-phase3-seed.sqlite3 python3 scripts/seed_dev_data.py`
+  passed and printed both development tokens.
+- `ollama list` showed local `llama3.2:1b` and `moondream:latest` models available.
+- `DATABASE_PATH=/tmp/replit-v3-phase3-live.sqlite3 python3 scripts/seed_dev_data.py`
+  passed and seeded a temporary live-test database.
+- `DATABASE_PATH=/tmp/replit-v3-phase3-live.sqlite3 uvicorn app.main:app --host
+  127.0.0.1 --port 8013` started successfully for live smoke testing.
+- A live OpenAI-client streaming request to `http://127.0.0.1:8013/v1` with
+  `model="llama3.2:1b"` returned incremental content and usage
+  `prompt_tokens=32`, `completion_tokens=6`, `total_tokens=38`; SQLite recorded
+  `user_a|llama3.2:1b|32|6|38|success`.
+- A live OpenAI-client vision request to `http://127.0.0.1:8013/v1` with
+  `model="moondream"` and a Lorem Picsum image encoded as a base64 data URL
+  returned a vision response and usage `prompt_tokens=745`, `completion_tokens=32`,
+  `total_tokens=777`; SQLite recorded `user_a|moondream|745|32|777|success`.
+
+### Deviations From the Plan
+
+- Remote image URLs are rejected rather than forwarded to Ollama.
+- Failed or interrupted streaming requests are not recorded as usage events when
+  Ollama does not provide final usage.
+
+### Deviation Rationale
+
+- Rejecting remote image URLs is the simplest way to guarantee the proxy does not
+  download remote images and to avoid relying on upstream remote-fetch behavior.
+- Skipping records for streams without final usage avoids inventing token usage for
+  interrupted requests. Successful billable streaming requests are recorded when
+  Ollama sends final usage.
+
 ## Changes Logged on Empty — Phase 2
 
 ### Changes Made

@@ -135,41 +135,6 @@ def test_chat_completion_compatibility_route_records_totals_per_user_and_model(
     assert usage_totals(database_path) == [("user_b", "llama3.2", 8, 4, 12, 2)]
 
 
-def test_chat_completion_rejects_streaming_without_calling_ollama_or_billing(
-    tmp_path, monkeypatch
-):
-    app, database_path = seeded_app(tmp_path)
-    calls = 0
-
-    async def fake_create_chat_completion(self, payload):
-        nonlocal calls
-        calls += 1
-        return {}
-
-    monkeypatch.setattr(OllamaClient, "create_chat_completion", fake_create_chat_completion)
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": "Bearer dev-token-user-a"},
-            json={
-                "model": "llama3.2:1b",
-                "messages": [{"role": "user", "content": "stream?"}],
-                "stream": True,
-            },
-        )
-
-    assert response.status_code == 400
-    assert response.json() == {
-        "error": {
-            "message": "stream=true is not supported yet",
-            "type": "invalid_request_error",
-        }
-    }
-    assert calls == 0
-    assert usage_rows(database_path) == []
-
-
 def test_chat_completion_rejects_disallowed_model_without_billing(tmp_path, monkeypatch):
     app, database_path = seeded_app(tmp_path)
     calls = 0
