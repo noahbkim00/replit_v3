@@ -1,5 +1,75 @@
 # Changelog
 
+## 2026-06-14 - Phase 1 models pass-through
+
+### Changes made
+
+- Implemented OpenAI-compatible model listing routes:
+  - `GET /v1/models`
+  - `GET /models`
+- Added `OllamaClient` as the only layer that calls Ollama, using a shared `httpx.AsyncClient` created during FastAPI lifespan startup.
+- Added `ModelService` to orchestrate model-list retrieval through the Ollama client.
+- Added a model-service dependency in `app/api/deps.py` so model routes stay thin.
+- Added proxy error classes and a global FastAPI exception handler that returns a clean OpenAI-style error envelope.
+- Mapped upstream Ollama failures:
+  - connection/request failures -> HTTP `502 Bad Gateway`
+  - timeouts -> HTTP `504 Gateway Timeout`
+- Added integration tests for successful `/v1/models` and `/models` pass-through and upstream 502/504 mapping.
+
+### Verification performed
+
+- Verified Phase 1 tests failed before implementation:
+  - Command: `uv run pytest tests/integration/test_models_route.py -q`
+  - Result: failed with `TypeError: OllamaClient() takes no arguments`, confirming the tests were exercising missing Phase 1 behavior.
+- Verified focused Phase 1 tests after implementation:
+  - Command: `uv run pytest tests/integration/test_models_route.py -q`
+  - Result: `4 passed`.
+- Verified the full current test suite:
+  - Command: `uv run pytest -q`
+  - Result: `5 passed`.
+- Verified linting:
+  - Command: `uv run ruff check .`
+  - Result: `All checks passed!`.
+- Verified local Ollama model state:
+  - Command: `ollama list`
+  - Result: `llama3.2:latest`, `moondream:latest`, and `llama3.2:1b` were present locally.
+- Verified upstream Ollama OpenAI-compatible models endpoint:
+  - Command: `curl -sS -i http://127.0.0.1:11434/v1/models`
+  - Result: HTTP `200 OK` with `llama3.2:latest`, `moondream:latest`, and `llama3.2:1b`.
+- Verified manual FastAPI startup and Phase 1 smoke endpoints:
+  - Command: `uv run uvicorn app.main:app --port 8000`
+  - Result: Uvicorn started on `http://127.0.0.1:8000`.
+  - Command: `curl -sS -i http://127.0.0.1:8000/healthz`
+  - Result: HTTP `200 OK` with body `{"status":"ok"}`.
+  - Command: `curl -sS -i http://127.0.0.1:8000/v1/models`
+  - Result: HTTP `200 OK` with `llama3.2:latest`, `moondream:latest`, and `llama3.2:1b`.
+  - Command: `curl -sS -i http://127.0.0.1:8000/models`
+  - Result: HTTP `200 OK` with `llama3.2:latest`, `moondream:latest`, and `llama3.2:1b`.
+- Verified unavailable-upstream handling manually:
+  - Command: `OLLAMA_BASE_URL=http://127.0.0.1:65530/v1 uv run uvicorn app.main:app --port 8001`
+  - Result: Uvicorn started on `http://127.0.0.1:8001`.
+  - Command: `curl -sS -i http://127.0.0.1:8001/v1/models`
+  - Result: HTTP `502 Bad Gateway` with body `{"error":{"message":"Ollama is unavailable","type":"upstream_error","code":"ollama_unavailable"}}`.
+
+### Deviations from the plan
+
+- Used an unreachable local upstream on port `65530` to validate unavailable-upstream behavior instead of stopping the local Ollama daemon.
+  - Reason: this verifies the same proxy error path without disrupting the user's local Ollama process.
+- Verified timeout mapping through the automated Phase 1 integration test instead of a manual slow upstream.
+  - Reason: the plan requires timeout handling, and the test deterministically raises `httpx.ReadTimeout` without adding a long-running manual fixture.
+
+### Explicitly deferred outside Phase 1
+
+- User authentication and admin authentication.
+- Model allowlisting.
+- Chat completions proxying.
+- Streaming responses.
+- Vision request handling.
+- Usage persistence.
+- Admin usage limits.
+- Load testing and concurrency validation.
+- Bonus features.
+
 ## 2026-06-14 - Phase 0 project skeleton
 
 ### Changes made
