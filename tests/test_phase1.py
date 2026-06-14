@@ -23,14 +23,16 @@ def test_seed_dev_data_creates_users_tokens_and_model_allowlist(tmp_path):
     seed_dev_data(database_path)
 
     with sqlite3.connect(database_path) as connection:
-        users = connection.execute("SELECT id FROM users ORDER BY id").fetchall()
+        users = connection.execute(
+            "SELECT id, role FROM users ORDER BY id"
+        ).fetchall()
         token_count = connection.execute("SELECT COUNT(*) FROM api_tokens").fetchone()
         allowed_models = connection.execute(
             "SELECT model_id FROM model_allowlist ORDER BY model_id"
         ).fetchall()
 
-    assert users == [("user_a",), ("user_b",)]
-    assert token_count == (2,)
+    assert users == [("admin", "admin"), ("user_a", "user"), ("user_b", "user")]
+    assert token_count == (3,)
     assert allowed_models == [("llama3.2",), ("llama3.2:1b",), ("moondream",)]
 
 

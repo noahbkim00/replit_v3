@@ -20,11 +20,19 @@ def initialize_database(database_path: Path) -> None:
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 display_name TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
+        user_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "role" not in user_columns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"
+            )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS api_tokens (
@@ -73,6 +81,18 @@ def initialize_database(database_path: Path) -> None:
                 request_count INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, model),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_limits (
+                user_id TEXT PRIMARY KEY,
+                requests_per_minute INTEGER,
+                daily_tokens INTEGER,
+                total_tokens INTEGER,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
             """

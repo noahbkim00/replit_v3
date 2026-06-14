@@ -48,6 +48,7 @@ Expected output includes:
 ```text
 User A token: dev-token-user-a
 User B token: dev-token-user-b
+Admin token: dev-token-admin
 ```
 
 Run the automated Phase 1 checks:
@@ -377,3 +378,190 @@ If local Ollama is not running, the proxy returns a clean upstream error:
 
 If `moondream` is not pulled locally, Ollama may return an upstream model error
 through the proxy. Pull it with `ollama pull moondream` and retry the vision demo.
+
+## Phase 4 Checks
+
+Seed the development users, tokens, model allowlist, and admin token:
+
+```bash
+python scripts/seed_dev_data.py
+```
+
+Expected output includes:
+
+```text
+User A token: dev-token-user-a
+User B token: dev-token-user-b
+Admin token: dev-token-admin
+```
+
+Run the automated Phase 4 checks, which mock the upstream Ollama path and verify
+that limit-rejected requests do not call the upstream client:
+
+```bash
+python -m pytest tests/test_phase4.py
+python -m pytest
+python -m ruff check .
+```
+
+For local usage API and admin limit checks, start Ollama, make sure `llama3.2:1b`
+is available, seed the proxy database, and run the proxy:
+
+```bash
+ollama serve
+ollama pull llama3.2:1b
+python scripts/seed_dev_data.py
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+In another terminal, create one successful User A request and one successful User B
+request:
+
+```bash
+curl -sS http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer dev-token-user-a" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama3.2:1b","messages":[{"role":"user","content":"Say A."}],"max_tokens":16}' >/dev/null
+
+curl -sS http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer dev-token-user-b" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama3.2:1b","messages":[{"role":"user","content":"Say B."}],"max_tokens":16}' >/dev/null
+```
+
+User A usage summary:
+
+```bash
+curl -sS http://localhost:8000/usage \
+  -H "Authorization: Bearer dev-token-user-a"
+```
+
+Expected response shape:
+
+```json
+{"user_id":"user_a","aggregate":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2,"request_count":1},"models":[{"model":"llama3.2:1b","prompt_tokens":1,"completion_tokens":1,"total_tokens":2,"request_count":1}]}
+```
+
+Token counts depend on local Ollama, but `user_id` should be `user_a` and all
+returned totals should belong only to User A.
+
+User A usage events:
+
+```bash
+curl -sS http://localhost:8000/usage/events \
+  -H "Authorization: Bearer dev-token-user-a"
+```
+
+Expected response shape:
+
+```json
+{"user_id":"user_a","events":[{"id":1,"user_id":"user_a","model":"llama3.2:1b","prompt_tokens":1,"completion_tokens":1,"total_tokens":2,"latency_ms":10.0,"status":"success","timestamp":"2026-06-13 00:00:00"}]}
+```
+
+Proof that User A only sees User A usage:
+
+```bash
+curl -sS http://localhost:8000/usage/events \
+  -H "Authorization: Bearer dev-token-user-a" \
+  | python -m json.tool
+
+curl -sS http://localhost:8000/usage/events \
+  -H "Authorization: Bearer dev-token-user-b" \
+  | python -m json.tool
+```
+
+The first response should have `user_id` set to `user_a` and event rows with
+`"user_id": "user_a"`. The second response should have `user_id` set to `user_b`
+and event rows with `"user_id": "user_b"`. There is no user-scoped endpoint that
+accepts another user's ID.
+
+Admin set/get limits:
+
+```bash
+curl -sS -X PUT http://localhost:8000/admin/users/user_a/limits \
+  -H "Authorization: Bearer dev-token-admin" \
+  -H "Content-Type: application/json" \
+  -d '{"requests_per_minute":2,"daily_tokens":1000,"total_tokens":5000}'
+
+curl -sS http://localhost:8000/admin/users/user_a/limits \
+  -H "Authorization: Bearer dev-token-admin"
+```
+
+Expected response:
+
+```json
+{"user_id":"user_a","requests_per_minute":2,"daily_tokens":1000,"total_tokens":5000}
+```
+
+Non-admin users cannot use admin routes:
+
+```bash
+curl -i -X PUT http://localhost:8000/admin/users/user_a/limits \
+  -H "Authorization: Bearer dev-token-user-a" \
+  -H "Content-Type: application/json" \
+  -d '{"requests_per_minute":2}'
+```
+
+Expected response is `HTTP/1.1 403 Forbidden`.
+
+Admin usage view for a user:
+
+```bash
+curl -sS http://localhost:8000/admin/users/user_a/usage \
+  -H "Authorization: Bearer dev-token-admin"
+```
+
+Expected response shape matches `GET /usage`, but for the `user_id` in the admin
+path.
+
+Request-per-minute rejection example:
+
+```bash
+curl -sS -X PUT http://localhost:8000/admin/users/user_a/limits \
+  -H "Authorization: Bearer dev-token-admin" \
+  -H "Content-Type: application/json" \
+  -d '{"requests_per_minute":1,"daily_tokens":null,"total_tokens":null}'
+
+curl -i http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer dev-token-user-a" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama3.2:1b","messages":[{"role":"user","content":"first"}],"max_tokens":8}'
+
+curl -i http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer dev-token-user-a" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama3.2:1b","messages":[{"role":"user","content":"second"}],"max_tokens":8}'
+```
+
+The second request should return `HTTP/1.1 429 Too Many Requests` with:
+
+```json
+{"error":{"message":"Request rate limit exceeded","type":"rate_limit_exceeded"}}
+```
+
+`429` limit rejections happen before the proxy calls Ollama. They do not create
+successful usage events or update `usage_totals`.
+
+Daily-token or total-token rejection example:
+
+```bash
+curl -sS -X PUT http://localhost:8000/admin/users/user_a/limits \
+  -H "Authorization: Bearer dev-token-admin" \
+  -H "Content-Type: application/json" \
+  -d '{"requests_per_minute":null,"daily_tokens":12,"total_tokens":12}'
+
+curl -i http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer dev-token-user-a" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama3.2:1b","messages":[{"role":"user","content":"try token cap"}],"max_tokens":64}'
+```
+
+If User A already has enough successful usage that `existing_tokens + max_tokens`
+exceeds either configured cap, the response should be `429`:
+
+```json
+{"error":{"message":"Token limit exceeded for daily_tokens","type":"rate_limit_exceeded"}}
+```
+
+The proxy uses `max_tokens` as the token projection for this preflight check, and
+the rejected request does not reach Ollama or create a successful usage event.

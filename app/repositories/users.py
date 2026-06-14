@@ -8,6 +8,11 @@ from pathlib import Path
 class User:
     id: str
     display_name: str
+    role: str
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == "admin"
 
 
 def hash_api_token(token: str) -> str:
@@ -23,7 +28,7 @@ class UserRepository:
         with sqlite3.connect(self._database_path) as connection:
             row = connection.execute(
                 """
-                SELECT users.id, users.display_name
+                SELECT users.id, users.display_name, users.role
                 FROM api_tokens
                 JOIN users ON users.id = api_tokens.user_id
                 WHERE api_tokens.token_hash = ?
@@ -36,19 +41,22 @@ class UserRepository:
         if row is None:
             return None
 
-        return User(id=row[0], display_name=row[1])
+        return User(id=row[0], display_name=row[1], role=row[2])
 
-    def upsert_user(self, user_id: str, display_name: str) -> None:
+    def upsert_user(
+        self, user_id: str, display_name: str, role: str = "user"
+    ) -> None:
         with sqlite3.connect(self._database_path) as connection:
             connection.execute(
                 """
-                INSERT INTO users (id, display_name, is_active)
-                VALUES (?, ?, 1)
+                INSERT INTO users (id, display_name, role, is_active)
+                VALUES (?, ?, ?, 1)
                 ON CONFLICT(id) DO UPDATE SET
                     display_name = excluded.display_name,
+                    role = excluded.role,
                     is_active = 1
                 """,
-                (user_id, display_name),
+                (user_id, display_name, role),
             )
 
     def upsert_api_token(self, token_id: str, user_id: str, token: str, name: str) -> None:

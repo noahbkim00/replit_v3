@@ -1,5 +1,65 @@
 # Changelog
 
+## Changes Logged on Empty — Phase 4
+
+### Changes Made
+
+- Added a `role` column to `users` with migration support for existing SQLite
+  databases.
+- Added a seeded admin user and `dev-token-admin` development API token.
+- Added a `user_limits` table and limit repository for `requests_per_minute`,
+  `daily_tokens`, and `total_tokens`.
+- Added usage repository read methods for per-user summaries, per-user events,
+  recent successful request counts, daily token totals, and all-time token totals.
+- Added a usage service and implemented authenticated `GET /usage` and
+  `GET /usage/events`.
+- Added admin authentication and implemented `PUT /admin/users/{user_id}/limits`,
+  `GET /admin/users/{user_id}/limits`, and
+  `GET /admin/users/{user_id}/usage`.
+- Replaced the Phase 2 no-op limit service with preflight limit enforcement before
+  Ollama forwarding for non-streaming and streaming chat paths.
+- Added `429` OpenAI-style error responses with `rate_limit_exceeded` when request
+  rate, daily token, or total token limits would be exceeded.
+- Preserved existing usage recording after successful Ollama completion and avoided
+  creating successful usage events for limit-rejected requests.
+- Added focused Phase 4 tests in `tests/test_phase4.py` for user usage visibility,
+  admin limit CRUD, admin usage lookup, request-rate enforcement, token-cap
+  enforcement, and upstream-call prevention for rejected requests.
+- Updated `testing.md` with Phase 4 automated checks, usage API examples, user
+  isolation checks, admin limit examples, and rejection examples.
+
+### Verification Steps Performed
+
+- `python3 -m pytest tests/test_phase4.py -q` failed before implementation with
+  `404 Not Found` for the missing usage and admin endpoints.
+- `python3 -m pytest tests/test_phase4.py -q` initially errored after partial
+  implementation due to a misplaced `usage_totals` upsert in
+  `app/repositories/usage.py`.
+- `python3 -m pytest tests/test_phase4.py -q` passed after fixing the repository
+  write path with 4 tests.
+- `python3 -m pytest -q` initially failed because the Phase 1 seed test still
+  expected only two non-admin users and two tokens.
+- `python3 -m pytest -q` passed after updating the seed test for the admin user and
+  token with 23 tests.
+- `python3 -m ruff check .` passed.
+
+### Deviations From the Plan
+
+- Token preflight uses `max_tokens` as the projected token usage. If `max_tokens` is
+  omitted or not an integer, the projection is `0`.
+- Phase 4 live local-Ollama smoke testing was not performed as part of this phase
+  execution.
+
+### Deviation Rationale
+
+- The Phase 4 plan explicitly calls for estimating token usage from `max_tokens`.
+  Treating missing or invalid `max_tokens` as `0` keeps the implementation small and
+  avoids inventing tokenizer behavior that Ollama may not match.
+- Local Ollama availability and pulled model state are machine-dependent. The
+  automated tests mock the upstream client and verify the important proxy behavior,
+  including that rejected requests do not call Ollama; `testing.md` documents exact
+  local commands for manual verification.
+
 ## Changes Logged on Empty — Phase 3
 
 ### Changes Made

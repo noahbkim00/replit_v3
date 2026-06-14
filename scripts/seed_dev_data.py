@@ -9,6 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
 DEV_TOKENS = {
     "user_a": "dev-token-user-a",
     "user_b": "dev-token-user-b",
+    "admin": "dev-token-admin",
 }
 
 ALLOWED_MODELS = ("llama3.2", "llama3.2:1b", "moondream")
@@ -24,11 +25,15 @@ def seed_dev_data(database_path: Path) -> None:
     user_repository = UserRepository(database_path)
     user_repository.upsert_user("user_a", "User A")
     user_repository.upsert_user("user_b", "User B")
+    user_repository.upsert_user("admin", "Admin", role="admin")
     user_repository.upsert_api_token(
         "dev-token-user-a", "user_a", DEV_TOKENS["user_a"], "User A dev token"
     )
     user_repository.upsert_api_token(
         "dev-token-user-b", "user_b", DEV_TOKENS["user_b"], "User B dev token"
+    )
+    user_repository.upsert_api_token(
+        "dev-token-admin", "admin", DEV_TOKENS["admin"], "Admin dev token"
     )
 
     model_repository = ModelRepository(database_path)
@@ -43,3 +48,4 @@ if __name__ == "__main__":
     print(f"Seeded development data in {database_path}")
     print("User A token: dev-token-user-a")
     print("User B token: dev-token-user-b")
+    print("Admin token: dev-token-admin")

@@ -5,6 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.clients.ollama import OllamaClient
 from app.config import Settings
+from app.repositories.limits import LimitRepository
 from app.repositories.models import ModelRepository
 from app.repositories.usage import UsageRepository
 from app.repositories.users import User, UserRepository
@@ -12,6 +13,7 @@ from app.services.auth import AuthService
 from app.services.chat_proxy import ChatProxyService
 from app.services.limits import LimitService
 from app.services.models import ModelService
+from app.services.usage import UsageService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -34,11 +36,26 @@ def get_model_service(settings: Annotated[Settings, Depends(get_settings)]) -> M
 def get_chat_proxy_service(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ChatProxyService:
+    usage_repository = UsageRepository(settings.database_path)
     return ChatProxyService(
         model_repository=ModelRepository(settings.database_path),
         ollama_client=OllamaClient(settings.ollama_base_url),
+        usage_repository=usage_repository,
+        limit_service=LimitService(
+            limit_repository=LimitRepository(settings.database_path),
+            usage_repository=usage_repository,
+        ),
+    )
+
+
+def get_usage_service(settings: Annotated[Settings, Depends(get_settings)]) -> UsageService:
+    return UsageService(UsageRepository(settings.database_path))
+
+
+def get_limit_service(settings: Annotated[Settings, Depends(get_settings)]) -> LimitService:
+    return LimitService(
+        limit_repository=LimitRepository(settings.database_path),
         usage_repository=UsageRepository(settings.database_path),
-        limit_service=LimitService(),
     )
 
 
@@ -61,4 +78,13 @@ async def require_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    return user
+
+
+async def require_admin(user: Annotated[User, Depends(require_user)]) -> User:
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin credentials required",
+        )
     return user
