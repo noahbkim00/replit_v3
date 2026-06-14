@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
+from app.clients.ollama import OllamaClient
 from app.config import Settings
 from app.config import settings as default_settings
 from app.db import initialize_database
@@ -21,6 +22,10 @@ def create_app(settings: Settings = default_settings) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         initialize_database(settings.database_path)
+        app.state.ollama_client = OllamaClient(
+            settings.ollama_base_url,
+            timeout_seconds=settings.ollama_timeout_seconds,
+        )
         app.state.ollama_concurrency_limiter = OllamaConcurrencyLimiter(
             settings.ollama_max_concurrency
         )
@@ -35,7 +40,10 @@ def create_app(settings: Settings = default_settings) -> FastAPI:
                 "max_request_body_bytes": settings.max_request_body_bytes,
             },
         )
-        yield
+        try:
+            yield
+        finally:
+            await app.state.ollama_client.aclose()
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.settings = settings

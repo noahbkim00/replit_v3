@@ -8,6 +8,7 @@ from app.clients.ollama import OllamaClient
 from app.config import Settings
 from app.repositories.limits import LimitRepository
 from app.repositories.models import ModelRepository
+from app.repositories.quota import QuotaRepository
 from app.repositories.usage import UsageRepository
 from app.repositories.users import User, UserRepository
 from app.services.auth import AuthService
@@ -29,31 +30,31 @@ def get_auth_service(settings: Annotated[Settings, Depends(get_settings)]) -> Au
     return AuthService(UserRepository(settings.database_path))
 
 
-def get_model_service(settings: Annotated[Settings, Depends(get_settings)]) -> ModelService:
+def get_ollama_client(request: Request) -> OllamaClient:
+    return request.app.state.ollama_client
+
+
+def get_model_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+    ollama_client: Annotated[OllamaClient, Depends(get_ollama_client)],
+) -> ModelService:
     return ModelService(
         model_repository=ModelRepository(settings.database_path),
-        ollama_client=OllamaClient(
-            settings.ollama_base_url,
-            timeout_seconds=settings.ollama_timeout_seconds,
-        ),
+        ollama_client=ollama_client,
     )
 
 
 def get_chat_proxy_service(
     settings: Annotated[Settings, Depends(get_settings)],
     request: Request,
+    ollama_client: Annotated[OllamaClient, Depends(get_ollama_client)],
 ) -> ChatProxyService:
-    usage_repository = UsageRepository(settings.database_path)
     return ChatProxyService(
         model_repository=ModelRepository(settings.database_path),
-        ollama_client=OllamaClient(
-            settings.ollama_base_url,
-            timeout_seconds=settings.ollama_timeout_seconds,
-        ),
-        usage_repository=usage_repository,
+        ollama_client=ollama_client,
         limit_service=LimitService(
             limit_repository=LimitRepository(settings.database_path),
-            usage_repository=usage_repository,
+            quota_repository=QuotaRepository(settings.database_path),
         ),
         ollama_concurrency_limiter=request.app.state.ollama_concurrency_limiter,
     )
@@ -66,7 +67,7 @@ def get_usage_service(settings: Annotated[Settings, Depends(get_settings)]) -> U
 def get_limit_service(settings: Annotated[Settings, Depends(get_settings)]) -> LimitService:
     return LimitService(
         limit_repository=LimitRepository(settings.database_path),
-        usage_repository=UsageRepository(settings.database_path),
+        quota_repository=QuotaRepository(settings.database_path),
     )
 
 

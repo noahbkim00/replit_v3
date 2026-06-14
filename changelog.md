@@ -1,5 +1,82 @@
 # Changelog
 
+## Changes Logged on Empty — Atomic Limits and Shared Ollama Client
+
+### Changes Made
+
+- Added `QuotaRepository` and `UsageReservation` for atomic chat quota reservation
+  with `BEGIN IMMEDIATE`.
+- Changed chat limit enforcement to reserve one `usage_events` row with
+  `status='reserved'` before calling Ollama, then finalize it to `success` or
+  `failed`.
+- Counted in-flight reservations during request-per-minute and token-cap checks so
+  concurrent requests cannot all pass the same preflight window.
+- Preserved successful usage totals by updating `usage_totals` only when a
+  reservation finalizes as `success`.
+- Made upstream failures and interrupted streams auditable as zero-token
+  `status='failed'` usage events.
+- Finalized clean streaming completions without final usage as `success` with zero
+  usage, matching the selected plan's naming choice.
+- Wrapped hot-path SQLite work from async services with `asyncio.to_thread`,
+  including model allowlist lookup, quota reservation, and quota finalization.
+- Removed the stale non-atomic limit preflight method from `LimitService` and the
+  now-unused direct usage writer dependency from `ChatProxyService`.
+- Converted usage/admin DB-only routes from `async def` to `def` so FastAPI runs
+  their sync repository work in a threadpool.
+- Changed `OllamaClient` to own one long-lived `httpx.AsyncClient`, added
+  `aclose()`, initialized a shared client in FastAPI lifespan, and injected it
+  through dependencies.
+- Added focused tests for concurrent request-rate enforcement, concurrent token-cap
+  enforcement, failed stream auditing, and shared Ollama client reuse/shutdown.
+- Updated `testing.md` with the exact focused concurrency/lifecycle checks,
+  broader regression command, full test/lint commands, and a small mocked manual
+  load-test workflow.
+
+### Verification Steps Performed
+
+- `python3 -m pytest tests/test_atomic_limits_and_client_lifecycle.py -q` failed
+  before implementation with four expected behavioral failures: concurrent request
+  limits allowed five upstream calls, concurrent token limits allowed five upstream
+  calls, interrupted streams recorded no failed event, and no shared
+  `app.state.ollama_client` existed.
+- `python3 -m pytest tests/test_atomic_limits_and_client_lifecycle.py -q` passed
+  after implementation with 4 tests.
+- `python3 -m pytest tests/test_phase2.py tests/test_phase3.py tests/test_phase4.py
+  tests/test_concurrency_controls.py -q` initially failed on stale expectations
+  for failed audit rows and the old fake limit-service interface.
+- `python3 -m pytest tests/test_phase2.py tests/test_phase3.py tests/test_phase4.py
+  tests/test_concurrency_controls.py tests/test_atomic_limits_and_client_lifecycle.py
+  -q` passed after updating tests with 23 tests.
+- `python3 -m ruff check app tests/test_atomic_limits_and_client_lifecycle.py
+  tests/test_concurrency_controls.py tests/test_phase2.py tests/test_phase3.py`
+  initially failed on an unused `time` import in the new test module.
+- `python3 -m ruff check app tests/test_atomic_limits_and_client_lifecycle.py
+  tests/test_concurrency_controls.py tests/test_phase2.py tests/test_phase3.py`
+  passed after removing the stale import.
+- `python3 -m pytest -q` passed with 34 tests.
+- `python3 -m ruff check .` passed.
+
+### Deviations From the Plan
+
+- No Redis/Postgres, background workers, queues, or unrelated architecture changes
+  were added.
+- Failed non-streaming upstream requests are also finalized as zero-token
+  `status='failed'` events, not just failed streams.
+- The previous `OllamaConcurrencyLimiter` remains in place alongside the shared
+  client.
+- A real Ollama/load-test run was not performed during this pass; mocked
+  concurrency tests were added and passed.
+
+### Deviation Rationale
+
+- Finalizing non-streaming upstream failures follows the plan's reservation model
+  and keeps all post-reservation upstream failures auditable without billing them.
+- Keeping the existing concurrency limiter preserves the prior Phase 5 behavior
+  while the shared HTTP client removes per-request client construction.
+- Real Ollama throughput is hardware-bound and requires local server/model state.
+  The new automated tests prove the selected atomic-limit behavior with mocked
+  upstream calls, and `testing.md` documents the manual load-test commands.
+
 ## Changes Logged on Empty — Minimal Logging
 
 ### Changes Made

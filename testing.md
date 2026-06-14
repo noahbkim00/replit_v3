@@ -24,6 +24,85 @@ failures, non-streaming chat success/failure, and streaming completion/failure.
 They also assert that bearer tokens, prompt text, raw invalid bodies, streamed chunk
 content, and base64 image snippets do not appear in captured logs.
 
+## Atomic Limit and Shared Client Checks
+
+Run the focused automated checks for concurrent quota enforcement, failed-stream
+auditing, and the lifespan-managed Ollama client:
+
+```bash
+python3 -m pytest tests/test_atomic_limits_and_client_lifecycle.py -q
+```
+
+These tests mock Ollama and exercise the FastAPI request path. They verify:
+
+- Five simultaneous chat requests against `requests_per_minute=1` produce exactly
+  one upstream call and four `429` responses.
+- Five simultaneous chat requests against a one-token daily/total cap reserve
+  projected usage atomically, producing exactly one upstream call and four `429`
+  responses.
+- An interrupted streaming response leaves one zero-token `usage_events` row with
+  `status='failed'` and no `usage_totals` entry.
+- The app reuses one shared `OllamaClient` instance across requests and calls
+  `OllamaClient.aclose()` during shutdown.
+
+Run the broader affected suite:
+
+```bash
+python3 -m pytest \
+  tests/test_phase2.py \
+  tests/test_phase3.py \
+  tests/test_phase4.py \
+  tests/test_concurrency_controls.py \
+  tests/test_atomic_limits_and_client_lifecycle.py \
+  -q
+```
+
+Then run the full regression and lint checks:
+
+```bash
+python3 -m pytest -q
+python3 -m ruff check .
+```
+
+For a small manual mocked load check, start the mock upstream and proxy on a
+temporary database:
+
+```bash
+DATABASE_PATH=/tmp/replit-v3-atomic.sqlite3 python3 scripts/seed_dev_data.py
+
+python3 -m uvicorn scripts.mock_ollama:create_app \
+  --factory --host 127.0.0.1 --port 11435 --no-access-log
+
+DATABASE_PATH=/tmp/replit-v3-atomic.sqlite3 \
+OLLAMA_BASE_URL=http://127.0.0.1:11435/v1 \
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8029 --no-access-log
+```
+
+In another terminal, verify ordinary proxy throughput and usage accounting:
+
+```bash
+python3 scripts/load_test.py \
+  --proxy-url http://127.0.0.1:8029 \
+  --requests 40 \
+  --concurrency 10 \
+  --clear-limits
+```
+
+Then verify concurrent rejection behavior:
+
+```bash
+python3 scripts/load_test.py \
+  --proxy-url http://127.0.0.1:8029 \
+  --requests 12 \
+  --concurrency 6 \
+  --set-request-limit 1
+```
+
+The mocked automated tests above are the required concurrency proof for this fix.
+Real Ollama load testing is optional for this check because local generation
+throughput is hardware-bound; use the Phase 5 real-Ollama workflow below when a
+local Ollama server and models are available.
+
 For a manual local log inspection, use a temporary database and capture Uvicorn
 stdout/stderr:
 

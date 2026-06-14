@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 from app.clients.ollama import OllamaClient
@@ -11,7 +12,9 @@ class ModelService:
         self._ollama_client = ollama_client
 
     async def list_models(self) -> dict[str, Any]:
-        allowed_model_ids = self._model_repository.list_allowed_model_ids()
+        allowed_model_ids = await asyncio.to_thread(
+            self._model_repository.list_allowed_model_ids
+        )
         upstream_payload = await self._ollama_client.list_models()
         upstream_models = upstream_payload.get("data")
 

@@ -9,7 +9,7 @@ from typing import Any
 from app.clients.ollama import OllamaClient
 from app.errors import ClientRequestError, UpstreamServiceError
 from app.repositories.models import ModelRepository
-from app.repositories.usage import TokenUsage, UsageRepository
+from app.repositories.usage import TokenUsage
 from app.repositories.users import User
 from app.services.limits import LimitService
 
@@ -51,13 +51,11 @@ class ChatProxyService:
         self,
         model_repository: ModelRepository,
         ollama_client: OllamaClient,
-        usage_repository: UsageRepository,
         limit_service: LimitService,
         ollama_concurrency_limiter: OllamaConcurrencyLimiter | None = None,
     ) -> None:
         self._model_repository = model_repository
         self._ollama_client = ollama_client
-        self._usage_repository = usage_repository
         self._limit_service = limit_service
         self._ollama_concurrency_limiter = (
             ollama_concurrency_limiter or _NoopOllamaConcurrencyLimiter()
@@ -67,8 +65,10 @@ class ChatProxyService:
         self, user: User, request_body: dict[str, Any]
     ) -> dict[str, Any]:
         try:
-            model = self._validate_request(request_body)
-            self._limit_service.check_chat_request(user, model, request_body)
+            model = await self._validate_request(request_body)
+            reservation = await self._limit_service.reserve_chat_request(
+                user, model, request_body
+            )
         except ClientRequestError as exc:
             logger.warning(
                 "chat.failed",
@@ -90,6 +90,7 @@ class ChatProxyService:
                 )
         except UpstreamServiceError:
             latency_ms = (perf_counter() - started_at) * 1000
+            await self._limit_service.finalize_failure(reservation, latency_ms)
             logger.error(
                 "chat.failed",
                 extra={
@@ -105,13 +106,7 @@ class ChatProxyService:
         latency_ms = (perf_counter() - started_at) * 1000
         usage = self._extract_usage(response_body)
 
-        self._usage_repository.record_chat_completion(
-            user_id=user.id,
-            model=model,
-            usage=usage,
-            latency_ms=latency_ms,
-            status="success",
-        )
+        await self._limit_service.finalize_success(reservation, usage, latency_ms)
         logger.info(
             "chat.completed",
             extra={
@@ -130,9 +125,11 @@ class ChatProxyService:
     async def stream_chat_completion(
         self, user: User, request_body: dict[str, Any]
     ) -> AsyncIterator[bytes]:
-        model = self._validate_request(request_body)
+        model = await self._validate_request(request_body)
         stream_payload = self._with_stream_usage(request_body)
-        self._limit_service.check_chat_request(user, model, stream_payload)
+        reservation = await self._limit_service.reserve_chat_request(
+            user, model, stream_payload
+        )
 
         started_at = perf_counter()
         usage: TokenUsage | None = None
@@ -151,6 +148,7 @@ class ChatProxyService:
                     yield chunk
         except UpstreamServiceError:
             latency_ms = (perf_counter() - started_at) * 1000
+            await self._limit_service.finalize_failure(reservation, latency_ms)
             logger.error(
                 "chat.stream_failed",
                 extra={
@@ -164,13 +162,7 @@ class ChatProxyService:
 
         latency_ms = (perf_counter() - started_at) * 1000
         if usage is not None:
-            self._usage_repository.record_chat_completion(
-                user_id=user.id,
-                model=model,
-                usage=usage,
-                latency_ms=latency_ms,
-                status="success",
-            )
+            await self._limit_service.finalize_success(reservation, usage, latency_ms)
             logger.info(
                 "chat.stream_completed",
                 extra={
@@ -184,6 +176,10 @@ class ChatProxyService:
                 },
             )
         else:
+            zero_usage = TokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+            await self._limit_service.finalize_success(
+                reservation, zero_usage, latency_ms
+            )
             logger.warning(
                 "chat.stream_completed_without_usage",
                 extra={
@@ -196,12 +192,14 @@ class ChatProxyService:
     def is_streaming_request(self, request_body: dict[str, Any]) -> bool:
         return request_body.get("stream") is True
 
-    def _validate_request(self, request_body: dict[str, Any]) -> str:
+    async def _validate_request(self, request_body: dict[str, Any]) -> str:
         model = request_body.get("model")
         if not isinstance(model, str) or not model:
             raise ClientRequestError("Request body must include a model")
 
-        allowed_model_ids = self._model_repository.list_allowed_model_ids()
+        allowed_model_ids = await asyncio.to_thread(
+            self._model_repository.list_allowed_model_ids
+        )
         if model not in allowed_model_ids:
             raise ClientRequestError(f"Model '{model}' is not allowed")
 

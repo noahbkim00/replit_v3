@@ -2,6 +2,7 @@ import asyncio
 from typing import Any
 
 from app.config import Settings
+from app.repositories.quota import UsageReservation
 from app.repositories.usage import TokenUsage
 from app.repositories.users import User
 from app.services import chat_proxy
@@ -23,13 +24,11 @@ def test_chat_proxy_service_limits_concurrent_ollama_calls():
     assert limiter_cls is not None
 
     model_repository = _FakeModelRepository()
-    usage_repository = _FakeUsageRepository()
     limit_service = _FakeLimitService()
     ollama_client = _SlowOllamaClient()
     service = ChatProxyService(
         model_repository=model_repository,
         ollama_client=ollama_client,
-        usage_repository=usage_repository,
         limit_service=limit_service,
         ollama_concurrency_limiter=limiter_cls(max_concurrency=2),
     )
@@ -47,7 +46,7 @@ def test_chat_proxy_service_limits_concurrent_ollama_calls():
     asyncio.run(run_requests())
 
     assert ollama_client.max_active_calls == 2
-    assert len(usage_repository.records) == 5
+    assert len(limit_service.successes) == 5
 
 
 class _FakeModelRepository:
@@ -55,34 +54,52 @@ class _FakeModelRepository:
         return {"llama3.2:1b"}
 
 
-class _FakeUsageRepository:
+class _FakeLimitService:
     def __init__(self) -> None:
-        self.records: list[dict[str, Any]] = []
+        self.next_event_id = 1
+        self.successes: list[dict[str, Any]] = []
+        self.failures: list[dict[str, Any]] = []
 
-    def record_chat_completion(
+    async def reserve_chat_request(
+        self, user: User, model: str, request_body: dict[str, Any]
+    ) -> UsageReservation:
+        _ = user, model, request_body
+        event_id = self.next_event_id
+        self.next_event_id += 1
+        return UsageReservation(
+            event_id=event_id,
+            user_id=user.id,
+            model=model,
+            estimated_tokens=0,
+        )
+
+    async def finalize_success(
         self,
-        user_id: str,
-        model: str,
+        reservation: UsageReservation,
         usage: TokenUsage,
         latency_ms: float,
-        status: str,
     ) -> None:
-        self.records.append(
+        self.successes.append(
             {
-                "user_id": user_id,
-                "model": model,
+                "reservation": reservation,
                 "usage": usage,
                 "latency_ms": latency_ms,
-                "status": status,
             }
         )
 
-
-class _FakeLimitService:
-    def check_chat_request(
-        self, user: User, model: str, request_body: dict[str, Any]
+    async def finalize_failure(
+        self,
+        reservation: UsageReservation,
+        latency_ms: float,
+        usage: TokenUsage | None = None,
     ) -> None:
-        _ = user, model, request_body
+        self.failures.append(
+            {
+                "reservation": reservation,
+                "usage": usage,
+                "latency_ms": latency_ms,
+            }
+        )
 
 
 class _SlowOllamaClient:

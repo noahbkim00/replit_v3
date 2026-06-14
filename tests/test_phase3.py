@@ -176,7 +176,7 @@ def test_streaming_chat_merges_existing_stream_options(tmp_path, monkeypatch, ca
     assert "hello" not in caplog.text
 
 
-def test_interrupted_stream_does_not_record_usage(tmp_path, monkeypatch, caplog):
+def test_interrupted_stream_records_failed_usage_event(tmp_path, monkeypatch, caplog):
     app, database_path = seeded_app(tmp_path)
 
     async def fake_stream_chat_completion(self, payload):
@@ -205,7 +205,8 @@ def test_interrupted_stream_does_not_record_usage(tmp_path, monkeypatch, caplog)
         ) as response:
             list(response.iter_bytes())
 
-    assert usage_rows(database_path) == []
+    assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 0, 0, 0, "failed")]
+    assert usage_totals(database_path) == []
     failed_records = [record for record in caplog.records if record.message == "chat.stream_failed"]
     assert len(failed_records) == 1
     assert failed_records[0].user_id == "user_a"

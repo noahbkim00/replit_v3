@@ -18,7 +18,7 @@ class UserLimitsUpdate(BaseModel):
 
 
 @router.put("/admin/users/{user_id}/limits")
-async def update_user_limits(
+def update_user_limits(
     user_id: str,
     limits_update: UserLimitsUpdate,
     _admin: Annotated[User, Depends(require_admin)],
@@ -33,7 +33,7 @@ async def update_user_limits(
 
 
 @router.get("/admin/users/{user_id}/limits")
-async def get_user_limits(
+def get_user_limits(
     user_id: str,
     _admin: Annotated[User, Depends(require_admin)],
     limit_service: Annotated[LimitService, Depends(get_limit_service)],
@@ -42,7 +42,7 @@ async def get_user_limits(
 
 
 @router.get("/admin/users/{user_id}/usage")
-async def get_user_usage(
+def get_user_usage(
     user_id: str,
     _admin: Annotated[User, Depends(require_admin)],
     usage_service: Annotated[UsageService, Depends(get_usage_service)],

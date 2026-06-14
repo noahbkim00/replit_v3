@@ -10,7 +10,7 @@ router = APIRouter()
 
 
 @router.get("/usage")
-async def get_usage(
+def get_usage(
     user: Annotated[User, Depends(require_user)],
     usage_service: Annotated[UsageService, Depends(get_usage_service)],
 ) -> dict[str, Any]:
@@ -18,7 +18,7 @@ async def get_usage(
 
 
 @router.get("/usage/events")
-async def get_usage_events(
+def get_usage_events(
     user: Annotated[User, Depends(require_user)],
     usage_service: Annotated[UsageService, Depends(get_usage_service)],
 ) -> dict[str, Any]:

@@ -13,16 +13,19 @@ class OllamaClient:
     def __init__(self, base_url: str, timeout_seconds: float = 30.0) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        self._client = httpx.AsyncClient(
+            base_url=self._base_url, timeout=self._timeout_seconds
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
     async def list_models(self) -> dict[str, Any]:
         endpoint = "/models"
         try:
-            async with httpx.AsyncClient(
-                base_url=self._base_url, timeout=self._timeout_seconds
-            ) as client:
-                response = await client.get(endpoint)
-                response.raise_for_status()
-                payload = response.json()
+            response = await self._client.get(endpoint)
+            response.raise_for_status()
+            payload = response.json()
         except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as exc:
             _log_upstream_failure(
                 endpoint,
@@ -48,12 +51,9 @@ class OllamaClient:
     async def create_chat_completion(self, payload: dict[str, Any]) -> dict[str, Any]:
         endpoint = "/chat/completions"
         try:
-            async with httpx.AsyncClient(
-                base_url=self._base_url, timeout=self._timeout_seconds
-            ) as client:
-                response = await client.post(endpoint, json=payload)
-                response.raise_for_status()
-                response_payload = response.json()
+            response = await self._client.post(endpoint, json=payload)
+            response.raise_for_status()
+            response_payload = response.json()
         except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as exc:
             _log_upstream_failure(
                 endpoint,
@@ -82,16 +82,16 @@ class OllamaClient:
         endpoint = "/chat/completions"
         timeout = httpx.Timeout(self._timeout_seconds, read=None)
         try:
-            async with httpx.AsyncClient(
-                base_url=self._base_url, timeout=timeout
-            ) as client:
-                async with client.stream(
-                    "POST", "/chat/completions", json=payload
-                ) as response:
-                    response.raise_for_status()
-                    async for chunk in response.aiter_bytes():
-                        if chunk:
-                            yield chunk
+            async with self._client.stream(
+                "POST",
+                "/chat/completions",
+                json=payload,
+                timeout=timeout,
+            ) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    if chunk:
+                        yield chunk
         except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as exc:
             _log_upstream_failure(
                 endpoint,

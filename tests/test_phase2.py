@@ -235,10 +235,11 @@ def test_chat_completion_upstream_failure_is_not_billed(tmp_path, monkeypatch, c
                 "model": "llama3.2:1b",
                 "messages": [{"role": "user", "content": "hello"}],
             },
-        )
+    )
 
     assert response.status_code == 502
-    assert usage_rows(database_path) == []
+    assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 0, 0, 0, "failed")]
+    assert usage_totals(database_path) == []
     failed_records = [record for record in caplog.records if record.message == "chat.failed"]
     assert len(failed_records) == 1
     assert failed_records[0].user_id == "user_a"
