@@ -318,7 +318,10 @@ import base64
 import httpx
 from openai import OpenAI
 
-image_response = httpx.get("https://picsum.photos/seed/replit-v3/320/240")
+image_response = httpx.get(
+    "https://picsum.photos/seed/replit-v3/320/240",
+    follow_redirects=True,
+)
 image_response.raise_for_status()
 image_data_url = (
     "data:image/jpeg;base64,"
