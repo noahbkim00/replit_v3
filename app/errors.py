@@ -1,2 +1,2 @@
-"""Shared error types will live here as later phases add behavior."""
-
+class UpstreamServiceError(Exception):
+    """Raised when Ollama cannot return a usable response."""
