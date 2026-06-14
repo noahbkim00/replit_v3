@@ -159,6 +159,19 @@ class ChatProxyService:
                 },
             )
             raise
+        except BaseException as exc:
+            latency_ms = (perf_counter() - started_at) * 1000
+            await self._limit_service.finalize_failure(reservation, latency_ms)
+            logger.warning(
+                "chat.stream_failed",
+                extra={
+                    "user_id": user.id,
+                    "model": model,
+                    "error_type": exc.__class__.__name__,
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+            raise
 
         latency_ms = (perf_counter() - started_at) * 1000
         if usage is not None:

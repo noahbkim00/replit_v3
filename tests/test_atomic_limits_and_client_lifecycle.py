@@ -10,6 +10,12 @@ from app.config import Settings
 from app.db import initialize_database
 from app.errors import UpstreamServiceError
 from app.main import create_app
+from app.repositories.limits import LimitRepository
+from app.repositories.models import ModelRepository
+from app.repositories.quota import QuotaRepository
+from app.repositories.users import User
+from app.services.chat_proxy import ChatProxyService
+from app.services.limits import LimitService
 from scripts.seed_dev_data import seed_dev_data
 
 
@@ -166,6 +172,32 @@ def test_interrupted_stream_records_failed_usage_event(tmp_path, monkeypatch):
     assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 0, 0, 0, "failed")]
 
 
+def test_stream_generator_close_finalizes_reserved_usage_event(tmp_path):
+    _app, database_path = seeded_app(tmp_path)
+    service = ChatProxyService(
+        model_repository=ModelRepository(database_path),
+        ollama_client=_OneChunkStreamingClient(),
+        limit_service=LimitService(
+            limit_repository=LimitRepository(database_path),
+            quota_repository=QuotaRepository(database_path),
+        ),
+    )
+    user = User(id="user_a", display_name="User A", role="user")
+
+    async def consume_one_chunk_then_close() -> None:
+        stream = service.stream_chat_completion(
+            user,
+            {**chat_payload(max_tokens=1), "stream": True},
+        )
+        first_chunk = await stream.__anext__()
+        assert first_chunk == b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'
+        await stream.aclose()
+
+    asyncio.run(consume_one_chunk_then_close())
+
+    assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 0, 0, 0, "failed")]
+
+
 def test_app_reuses_shared_ollama_client_and_closes_it_on_shutdown(tmp_path, monkeypatch):
     app, _database_path = seeded_app(tmp_path)
     client_ids: list[int] = []
@@ -204,3 +236,9 @@ def test_app_reuses_shared_ollama_client_and_closes_it_on_shutdown(tmp_path, mon
     assert second_response.status_code == 200
     assert client_ids == [shared_client_id, shared_client_id]
     assert closed_client_ids == [shared_client_id]
+
+
+class _OneChunkStreamingClient:
+    async def stream_chat_completion(self, payload):
+        _ = payload
+        yield b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'

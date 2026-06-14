@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Annotated
 
@@ -83,7 +84,7 @@ async def require_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user = auth_service.authenticate(credentials.credentials)
+    user = await asyncio.to_thread(auth_service.authenticate, credentials.credentials)
     if user is None:
         logger.warning("auth.failure", extra={"reason": "invalid_token"})
         raise HTTPException(
