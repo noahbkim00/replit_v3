@@ -8,7 +8,7 @@ from app.api.router import api_router
 from app.config import Settings
 from app.config import settings as default_settings
 from app.db import initialize_database
-from app.errors import UpstreamServiceError
+from app.errors import ClientRequestError, UpstreamServiceError
 
 
 def create_app(settings: Settings = default_settings) -> FastAPI:
@@ -28,6 +28,15 @@ def create_app(settings: Settings = default_settings) -> FastAPI:
         return JSONResponse(
             status_code=502,
             content={"error": {"message": str(exc), "type": "upstream_error"}},
+        )
+
+    @app.exception_handler(ClientRequestError)
+    async def client_request_error_handler(
+        _: Request, exc: ClientRequestError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": {"message": str(exc), "type": exc.error_type}},
         )
 
     return app

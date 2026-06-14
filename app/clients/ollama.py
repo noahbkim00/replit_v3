@@ -31,3 +31,25 @@ class OllamaClient:
             raise UpstreamServiceError("Ollama returned an invalid models response")
 
         return payload
+
+    async def create_chat_completion(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            async with httpx.AsyncClient(
+                base_url=self._base_url, timeout=self._timeout_seconds
+            ) as client:
+                response = await client.post("/chat/completions", json=payload)
+                response.raise_for_status()
+                response_payload = response.json()
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise UpstreamServiceError("Ollama is unavailable") from exc
+        except httpx.HTTPStatusError as exc:
+            raise UpstreamServiceError(
+                f"Ollama returned HTTP {exc.response.status_code}"
+            ) from exc
+        except ValueError as exc:
+            raise UpstreamServiceError("Ollama returned invalid JSON") from exc
+
+        if not isinstance(response_payload, dict):
+            raise UpstreamServiceError("Ollama returned an invalid chat response")
+
+        return response_payload

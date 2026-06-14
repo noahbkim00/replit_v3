@@ -1,5 +1,53 @@
 # Changelog
 
+## Changes Logged on Empty — Phase 2
+
+### Changes Made
+
+- Added SQLite `usage_events` and `usage_totals` tables for successful chat usage.
+- Added a usage repository that records one event and maintains per-user/per-model totals.
+- Added a no-op `LimitService` preflight placeholder for the Phase 2 chat flow.
+- Added a chat proxy service that validates the requested model against the allowlist,
+  rejects `stream=true`, calls Ollama through the client layer, extracts token usage,
+  records usage, and returns the upstream response.
+- Added `OllamaClient.create_chat_completion()` for `POST /chat/completions`.
+- Added authenticated `POST /v1/chat/completions` and `POST /chat/completions` routes.
+- Added clean `400` OpenAI-style error responses for invalid Phase 2 chat requests.
+- Added focused Phase 2 tests in `tests/test_phase2.py`.
+- Updated `testing.md` with Phase 2 automated checks, local OpenAI-client testing,
+  usage persistence checks, invalid-auth no-billing checks, stream rejection, and
+  upstream-failure behavior.
+
+### Verification Steps Performed
+
+- `python3 -m pytest tests/test_phase2.py -q` failed before implementation with
+  `AttributeError: <class 'app.clients.ollama.OllamaClient'> has no attribute
+  'create_chat_completion'`.
+- `python3 -m pytest tests/test_phase2.py -q` passed after implementation with 6 tests.
+- `python3 -m pytest -q` passed after implementation with 13 tests.
+- `python3 -m ruff check .` initially failed on import ordering in `app/main.py`.
+- `python3 -m ruff check . --fix` fixed 1 import-order issue.
+- `python3 -m pytest tests/test_phase2.py -q` passed after import formatting with 6 tests.
+- `python3 -m pytest -q` passed after import formatting with 13 tests.
+- `python3 -m ruff check .` passed after import formatting.
+- `DATABASE_PATH=/tmp/replit-v3-phase2-seed.sqlite3 python3 scripts/seed_dev_data.py`
+  passed and printed both development tokens.
+
+### Deviations From the Plan
+
+- Real local-Ollama verification was not performed as part of this phase execution.
+- Failed upstream chat requests are not recorded as usage events in Phase 2.
+
+### Deviation Rationale
+
+- Local Ollama availability and pulled model state are machine-dependent. The automated
+  tests use a mocked upstream path, while `testing.md` documents exact local-Ollama
+  OpenAI-client and upstream-unavailable checks for manual verification.
+- Phase 2 requires extracting usage from successful Ollama responses and not inventing
+  token usage for failed upstream requests. Not recording failed upstream attempts keeps
+  token billing unambiguous; `status` is currently recorded as `success` for billable
+  usage events and can support richer event types in later phases.
+
 ## Changes Logged on Empty — Phase 1
 
 ### Changes Made
