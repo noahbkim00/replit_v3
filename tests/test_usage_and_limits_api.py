@@ -1,48 +1,14 @@
 import logging
-import sqlite3
-from typing import Any
 
 from fastapi.testclient import TestClient
 
 from app.clients.ollama import OllamaClient
-from app.config import Settings
-from app.db import initialize_database
-from app.main import create_app
-from scripts.seed_dev_data import seed_dev_data
 
 
-def seeded_app(tmp_path):
-    settings = Settings(database_path=tmp_path / "proxy.sqlite3")
-    initialize_database(settings.database_path)
-    seed_dev_data(settings.database_path)
-    return create_app(settings), settings.database_path
-
-
-def usage_rows(database_path):
-    with sqlite3.connect(database_path) as connection:
-        return connection.execute(
-            """
-            SELECT user_id, model, prompt_tokens, completion_tokens, total_tokens, status
-            FROM usage_events
-            ORDER BY id
-            """
-        ).fetchall()
-
-
-def user_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
-
-
-def chat_payload(max_tokens: int = 8) -> dict[str, Any]:
-    return {
-        "model": "llama3.2:1b",
-        "messages": [{"role": "user", "content": "hello"}],
-        "max_tokens": max_tokens,
-    }
-
-
-def test_user_usage_endpoints_only_return_authenticated_users_usage(tmp_path, monkeypatch):
-    app, _database_path = seeded_app(tmp_path)
+def test_user_usage_endpoints_only_return_authenticated_users_usage(
+    seeded_app, user_headers, chat_payload, monkeypatch
+):
+    app, _database_path = seeded_app()
 
     async def fake_create_chat_completion(self, payload):
         return {
@@ -117,8 +83,10 @@ def test_user_usage_endpoints_only_return_authenticated_users_usage(tmp_path, mo
     assert user_b_usage.json()["aggregate"]["total_tokens"] == 5
 
 
-def test_admin_can_set_get_limits_and_view_a_users_usage(tmp_path, monkeypatch, caplog):
-    app, _database_path = seeded_app(tmp_path)
+def test_admin_can_set_get_limits_and_view_a_users_usage(
+    seeded_app, user_headers, chat_payload, monkeypatch, caplog
+):
+    app, _database_path = seeded_app()
 
     async def fake_create_chat_completion(self, payload):
         return {
@@ -192,9 +160,9 @@ def test_admin_can_set_get_limits_and_view_a_users_usage(tmp_path, monkeypatch, 
 
 
 def test_requests_per_minute_limit_rejects_before_calling_ollama_and_is_not_billed(
-    tmp_path, monkeypatch, caplog
+    seeded_app, usage_rows, user_headers, chat_payload, monkeypatch, caplog
 ):
-    app, database_path = seeded_app(tmp_path)
+    app, database_path = seeded_app()
     calls = 0
 
     async def fake_create_chat_completion(self, payload):
@@ -257,9 +225,9 @@ def test_requests_per_minute_limit_rejects_before_calling_ollama_and_is_not_bill
 
 
 def test_token_limit_uses_max_tokens_projection_before_calling_ollama(
-    tmp_path, monkeypatch, caplog
+    seeded_app, usage_rows, user_headers, chat_payload, monkeypatch, caplog
 ):
-    app, database_path = seeded_app(tmp_path)
+    app, database_path = seeded_app()
     calls = 0
 
     async def fake_create_chat_completion(self, payload):

@@ -1,52 +1,17 @@
 import asyncio
-import sqlite3
 from typing import Any
 
 import httpx
 from fastapi.testclient import TestClient
 
 from app.clients.ollama import OllamaClient
-from app.config import Settings
-from app.db import initialize_database
 from app.errors import UpstreamServiceError
-from app.main import create_app
 from app.repositories.limits import LimitRepository
 from app.repositories.models import ModelRepository
 from app.repositories.quota import QuotaRepository
 from app.repositories.users import User
 from app.services.chat_proxy import ChatProxyService
 from app.services.limits import LimitService
-from scripts.seed_dev_data import seed_dev_data
-
-
-def seeded_app(tmp_path):
-    settings = Settings(database_path=tmp_path / "proxy.sqlite3")
-    initialize_database(settings.database_path)
-    seed_dev_data(settings.database_path)
-    return create_app(settings), settings.database_path
-
-
-def user_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
-
-
-def chat_payload(max_tokens: int = 1) -> dict[str, Any]:
-    return {
-        "model": "llama3.2:1b",
-        "messages": [{"role": "user", "content": "hello"}],
-        "max_tokens": max_tokens,
-    }
-
-
-def usage_rows(database_path):
-    with sqlite3.connect(database_path) as connection:
-        return connection.execute(
-            """
-            SELECT user_id, model, prompt_tokens, completion_tokens, total_tokens, status
-            FROM usage_events
-            ORDER BY id
-            """
-        ).fetchall()
 
 
 async def _post_concurrently(
@@ -64,9 +29,9 @@ async def _post_concurrently(
 
 
 def test_concurrent_requests_per_minute_limit_allows_one_upstream_call(
-    tmp_path, monkeypatch
+    seeded_app, usage_rows, user_headers, chat_payload, monkeypatch
 ):
-    app, database_path = seeded_app(tmp_path)
+    app, database_path = seeded_app()
     calls = 0
 
     async def fake_create_chat_completion(self, payload):
@@ -108,9 +73,9 @@ def test_concurrent_requests_per_minute_limit_allows_one_upstream_call(
 
 
 def test_concurrent_token_limit_reserves_projected_usage_before_upstream(
-    tmp_path, monkeypatch
+    seeded_app, usage_rows, user_headers, chat_payload, monkeypatch
 ):
-    app, database_path = seeded_app(tmp_path)
+    app, database_path = seeded_app()
     calls = 0
 
     async def fake_create_chat_completion(self, payload):
@@ -151,8 +116,10 @@ def test_concurrent_token_limit_reserves_projected_usage_before_upstream(
     assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 0, 1, 1, "success")]
 
 
-def test_interrupted_stream_records_failed_usage_event(tmp_path, monkeypatch):
-    app, database_path = seeded_app(tmp_path)
+def test_interrupted_stream_records_failed_usage_event(
+    seeded_app, usage_rows, user_headers, chat_payload, monkeypatch
+):
+    app, database_path = seeded_app()
 
     async def fake_stream_chat_completion(self, payload):
         yield b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'
@@ -172,8 +139,10 @@ def test_interrupted_stream_records_failed_usage_event(tmp_path, monkeypatch):
     assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 0, 0, 0, "failed")]
 
 
-def test_stream_generator_close_finalizes_reserved_usage_event(tmp_path):
-    _app, database_path = seeded_app(tmp_path)
+def test_stream_generator_close_finalizes_reserved_usage_event(
+    seeded_app, usage_rows, chat_payload
+):
+    _app, database_path = seeded_app()
     service = ChatProxyService(
         model_repository=ModelRepository(database_path),
         ollama_client=_OneChunkStreamingClient(),
@@ -198,8 +167,10 @@ def test_stream_generator_close_finalizes_reserved_usage_event(tmp_path):
     assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 0, 0, 0, "failed")]
 
 
-def test_app_reuses_shared_ollama_client_and_closes_it_on_shutdown(tmp_path, monkeypatch):
-    app, _database_path = seeded_app(tmp_path)
+def test_app_reuses_shared_ollama_client_and_closes_it_on_shutdown(
+    seeded_app, user_headers, chat_payload, monkeypatch
+):
+    app, _database_path = seeded_app()
     client_ids: list[int] = []
     closed_client_ids: list[int] = []
 

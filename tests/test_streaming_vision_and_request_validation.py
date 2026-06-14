@@ -1,58 +1,16 @@
-import json
 import logging
-import sqlite3
 from typing import Any
 
 from fastapi.testclient import TestClient
 
 from app.clients.ollama import OllamaClient
-from app.config import Settings
-from app.db import initialize_database
 from app.errors import UpstreamServiceError
-from app.main import create_app
-from scripts.seed_dev_data import seed_dev_data
-
-
-def seeded_app(tmp_path, **settings_overrides):
-    settings = Settings(
-        database_path=tmp_path / "proxy.sqlite3",
-        **settings_overrides,
-    )
-    initialize_database(settings.database_path)
-    seed_dev_data(settings.database_path)
-    return create_app(settings), settings.database_path
-
-
-def usage_rows(database_path):
-    with sqlite3.connect(database_path) as connection:
-        return connection.execute(
-            """
-            SELECT user_id, model, prompt_tokens, completion_tokens, total_tokens, status
-            FROM usage_events
-            ORDER BY id
-            """
-        ).fetchall()
-
-
-def usage_totals(database_path):
-    with sqlite3.connect(database_path) as connection:
-        return connection.execute(
-            """
-            SELECT user_id, model, prompt_tokens, completion_tokens, total_tokens, request_count
-            FROM usage_totals
-            ORDER BY user_id, model
-            """
-        ).fetchall()
-
-
-def sse_chunk(payload: dict[str, Any]) -> bytes:
-    return f"data: {json.dumps(payload)}\n\n".encode()
 
 
 def test_streaming_chat_forwards_incremental_chunks_and_records_final_usage(
-    tmp_path, monkeypatch, caplog
+    seeded_app, usage_rows, usage_totals, sse_chunk, monkeypatch, caplog
 ):
-    app, database_path = seeded_app(tmp_path)
+    app, database_path = seeded_app()
     forwarded_payloads: list[dict[str, Any]] = []
 
     async def fake_stream_chat_completion(self, payload):
@@ -133,8 +91,8 @@ def test_streaming_chat_forwards_incremental_chunks_and_records_final_usage(
     assert '"content": "he"' not in caplog.text
 
 
-def test_streaming_chat_merges_existing_stream_options(tmp_path, monkeypatch, caplog):
-    app, _database_path = seeded_app(tmp_path)
+def test_streaming_chat_merges_existing_stream_options(seeded_app, monkeypatch, caplog):
+    app, _database_path = seeded_app()
     forwarded_payloads: list[dict[str, Any]] = []
 
     async def fake_stream_chat_completion(self, payload):
@@ -176,8 +134,10 @@ def test_streaming_chat_merges_existing_stream_options(tmp_path, monkeypatch, ca
     assert "hello" not in caplog.text
 
 
-def test_interrupted_stream_records_failed_usage_event(tmp_path, monkeypatch, caplog):
-    app, database_path = seeded_app(tmp_path)
+def test_interrupted_stream_records_failed_usage_event(
+    seeded_app, usage_rows, usage_totals, sse_chunk, monkeypatch, caplog
+):
+    app, database_path = seeded_app()
 
     async def fake_stream_chat_completion(self, payload):
         yield sse_chunk(
@@ -217,9 +177,9 @@ def test_interrupted_stream_records_failed_usage_event(tmp_path, monkeypatch, ca
 
 
 def test_vision_request_accepts_base64_data_url_and_forwards_to_moondream(
-    tmp_path, monkeypatch, caplog
+    seeded_app, usage_rows, monkeypatch, caplog
 ):
-    app, database_path = seeded_app(tmp_path)
+    app, database_path = seeded_app()
     forwarded_payloads: list[dict[str, Any]] = []
 
     async def fake_create_chat_completion(self, payload):
@@ -280,8 +240,10 @@ def test_vision_request_accepts_base64_data_url_and_forwards_to_moondream(
     assert "iVBORw0KGgo=" not in caplog.text
 
 
-def test_vision_request_rejects_remote_image_urls_without_calling_ollama(tmp_path, monkeypatch):
-    app, database_path = seeded_app(tmp_path)
+def test_vision_request_rejects_remote_image_urls_without_calling_ollama(
+    seeded_app, usage_rows, monkeypatch
+):
+    app, database_path = seeded_app()
     calls = 0
 
     async def fake_create_chat_completion(self, payload):
@@ -322,8 +284,10 @@ def test_vision_request_rejects_remote_image_urls_without_calling_ollama(tmp_pat
     assert usage_rows(database_path) == []
 
 
-def test_chat_request_body_size_limit_is_enforced_before_ollama(tmp_path, monkeypatch, caplog):
-    app, database_path = seeded_app(tmp_path, max_request_body_bytes=120)
+def test_chat_request_body_size_limit_is_enforced_before_ollama(
+    seeded_app, usage_rows, monkeypatch, caplog
+):
+    app, database_path = seeded_app(max_request_body_bytes=120)
     calls = 0
 
     async def fake_create_chat_completion(self, payload):
@@ -360,8 +324,8 @@ def test_chat_request_body_size_limit_is_enforced_before_ollama(tmp_path, monkey
     assert "x" * 20 not in caplog.text
 
 
-def test_invalid_json_returns_clean_client_error(tmp_path, caplog):
-    app, _database_path = seeded_app(tmp_path)
+def test_invalid_json_returns_clean_client_error(seeded_app, caplog):
+    app, _database_path = seeded_app()
 
     caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
@@ -387,8 +351,8 @@ def test_invalid_json_returns_clean_client_error(tmp_path, caplog):
     assert "{not-json" not in caplog.text
 
 
-def test_non_object_json_returns_clean_client_error_and_logs_rejection(tmp_path, caplog):
-    app, _database_path = seeded_app(tmp_path)
+def test_non_object_json_returns_clean_client_error_and_logs_rejection(seeded_app, caplog):
+    app, _database_path = seeded_app()
 
     caplog.set_level(logging.WARNING)
     with TestClient(app) as client:

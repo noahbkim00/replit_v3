@@ -12,9 +12,7 @@ class ModelService:
         self._ollama_client = ollama_client
 
     async def list_models(self) -> dict[str, Any]:
-        allowed_model_ids = await asyncio.to_thread(
-            self._model_repository.list_allowed_model_ids
-        )
+        allowed_model_ids = await asyncio.to_thread(self._model_repository.list_allowed_model_ids)
         upstream_payload = await self._ollama_client.list_models()
         upstream_models = upstream_payload.get("data")
 
@@ -24,7 +22,8 @@ class ModelService:
         filtered_models = [
             model
             for model in upstream_models
-            if isinstance(model, dict) and model.get("id") in allowed_model_ids
+            if isinstance(model, dict)
+            and self._is_allowed_model_id(model.get("id"), allowed_model_ids)
         ]
 
         return {
@@ -32,3 +31,10 @@ class ModelService:
             "object": upstream_payload.get("object", "list"),
             "data": filtered_models,
         }
+
+    def _is_allowed_model_id(self, model_id: Any, allowed_model_ids: set[str]) -> bool:
+        if not isinstance(model_id, str):
+            return False
+        return model_id in allowed_model_ids or (
+            model_id.endswith(":latest") and model_id.removesuffix(":latest") in allowed_model_ids
+        )

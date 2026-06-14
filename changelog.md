@@ -1,5 +1,104 @@
 # Changelog
 
+## Changes Logged on Empty — Testing and Demo Overhaul
+
+### Changes Made
+
+- Added shared pytest fixtures in `tests/conftest.py` for temp settings, seeded
+  real FastAPI apps, real SQLite usage row helpers, auth headers, chat payloads,
+  SSE chunks, and method-level `OllamaClient` stubs.
+- Renamed phase-numbered unit tests to capability-based filenames.
+- Updated HTTP-path tests to use the shared fixtures while preserving real auth,
+  repositories, services, SQLite usage/limit code, and FastAPI routing.
+- Kept direct service-level tests only for the Ollama concurrency limiter and
+  stream-generator close behavior.
+- Added real demo scripts:
+  - `scripts/demo_standard.py`
+  - `scripts/demo_streaming.py`
+  - `scripts/demo_limits.py`
+  - `scripts/demo_usage.py`
+  - `scripts/demo_concurrency.py`
+  - `scripts/demo_load_test.py`
+- Added `scripts/demo_helpers.py` for common OpenAI client setup, proxy API
+  helpers, Lorem Picsum image encoding, usage snapshots, limit updates, and
+  PASS/FAIL output.
+- Made `/v1/models` include upstream `:latest` entries when the untagged model is
+  allowlisted, so local Ollama installs that report `moondream:latest` satisfy
+  the required `moondream` demo preflight.
+- Updated the load-demo metric tests to exercise `scripts/demo_load_test.py`
+  without contacting Ollama.
+- Replaced phase-oriented README/testing guidance with concise unit-test,
+  local-Ollama, fresh-DB, and demo commands.
+
+### Verification Steps Performed
+
+- `python3 -m pytest tests/test_chat_completions_usage.py
+  tests/test_streaming_vision_and_request_validation.py
+  tests/test_usage_and_limits_api.py
+  tests/test_atomic_limit_reservations_and_client_lifecycle.py
+  tests/test_auth_models_and_seed_data.py -q` passed with 27 tests.
+- `python3 -m pytest tests/test_demo_load_test_metrics.py -q` passed with 3
+  tests.
+- `python3 -m pytest -q` passed with 35 tests.
+- `python3 -m ruff format .` passed and reformatted files.
+- `python3 -m ruff check .` passed.
+- `python3 -m py_compile scripts/demo_helpers.py scripts/demo_standard.py
+  scripts/demo_streaming.py scripts/demo_limits.py scripts/demo_usage.py
+  scripts/demo_concurrency.py scripts/demo_load_test.py` passed.
+- Help checks passed for all new demo scripts:
+  - `python3 scripts/demo_standard.py --help`
+  - `python3 scripts/demo_streaming.py --help`
+  - `python3 scripts/demo_limits.py --help`
+  - `python3 scripts/demo_usage.py --help`
+  - `python3 scripts/demo_concurrency.py --help`
+  - `python3 scripts/demo_load_test.py --help`
+- Live real-Ollama demos against an already running proxy on port 8000 passed:
+  - `python3 scripts/demo_standard.py --proxy-url http://127.0.0.1:8000
+    --timeout-seconds 120`
+  - `python3 scripts/demo_streaming.py --proxy-url http://127.0.0.1:8000
+    --timeout-seconds 120`
+  - `python3 scripts/demo_usage.py --proxy-url http://127.0.0.1:8000
+    --timeout-seconds 120`
+  - `python3 scripts/demo_concurrency.py --proxy-url http://127.0.0.1:8000
+    --timeout-seconds 120 --requests-per-user 2`
+- Live real-Ollama demos against a fresh seeded proxy on port 8032 passed:
+  - `python3 scripts/demo_limits.py --proxy-url http://127.0.0.1:8032
+    --timeout-seconds 120`
+  - `python3 scripts/demo_load_test.py --proxy-url http://127.0.0.1:8032
+    --timeout-seconds 120 --requests 4 --concurrency 2 --limited-allowed 2`
+- After tightening model preflight, a fresh proxy on port 8033 listed
+  `moondream:latest` and `python3 scripts/demo_standard.py --proxy-url
+  http://127.0.0.1:8033 --timeout-seconds 120` passed.
+- After adding the limited-scenario fresh-window guard, `python3
+  scripts/demo_load_test.py --proxy-url http://127.0.0.1:8033 --timeout-seconds
+  120 --requests 4 --concurrency 2 --limited-allowed 2` passed.
+
+### Deviations From the Plan
+
+- The load demo uses `user_a` for the no-limit scenario and `user_b` for the
+  limited scenario so recent no-limit traffic cannot consume the limited
+  request-per-minute window.
+- Existing `scripts/load_test.py` and `scripts/mock_ollama.py` were left in
+  place as legacy/internal utilities, but README/testing docs no longer present
+  them as the submitted proof path.
+- `/v1/models` filtering now treats an upstream `model:latest` ID as matching an
+  untagged allowlist entry such as `model`.
+- `python` is not present on this machine outside a virtualenv, so verification
+  commands were run with `python3`.
+
+### Deviation Rationale
+
+- A single script cannot deterministically run no-limit traffic and then enforce
+  a lower request-per-minute cap on the same user without waiting for the rolling
+  60-second window or resetting the database; separate seeded users keep the
+  proof deterministic and still exercise the same real proxy code.
+- Ollama accepts untagged aliases like `moondream` even when its OpenAI-compatible
+  model list reports `moondream:latest`; treating those as equivalent keeps
+  model listing, allowlisting, and demo preflight aligned with local Ollama
+  behavior.
+- The old mock/load utilities may still be useful for internal development, and
+  removing them is unnecessary for the requested demo overhaul.
+
 ## Changes Logged on Empty — Atomic Limits and Shared Ollama Client
 
 ### Changes Made

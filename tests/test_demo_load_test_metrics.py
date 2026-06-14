@@ -1,4 +1,4 @@
-from scripts.load_test import RequestResult, build_parser, summarize_results
+from scripts.demo_load_test import RequestResult, build_parser, summarize_results
 
 
 def test_summarize_results_reports_latency_percentiles_and_rates():
@@ -10,14 +10,19 @@ def test_summarize_results_reports_latency_percentiles_and_rates():
     ]
 
     summary = summarize_results(
+        scenario="unit",
         results=results,
         elapsed_seconds=0.5,
         usage_events_before=7,
         usage_events_after=9,
+        usage_requests_before=10,
+        usage_requests_after=12,
     )
 
     assert summary.total_requests == 4
     assert summary.successful_requests == 2
+    assert summary.limit_rejections == 1
+    assert summary.other_failures == 1
     assert summary.requests_per_second == 8.0
     assert summary.p50_latency_ms == 25.0
     assert summary.p95_latency_ms == 40.0
@@ -25,10 +30,13 @@ def test_summarize_results_reports_latency_percentiles_and_rates():
     assert summary.error_rate == 0.5
     assert summary.limit_rejection_rate == 0.25
     assert summary.usage_event_count == 2
+    assert summary.usage_request_count_delta == 2
+    assert summary.pass_ is False
 
 
 def test_summarize_results_handles_empty_results():
     summary = summarize_results(
+        scenario="empty",
         results=[],
         elapsed_seconds=0.0,
         usage_events_before=3,
@@ -41,28 +49,24 @@ def test_summarize_results_handles_empty_results():
     assert summary.error_rate == 0.0
     assert summary.limit_rejection_rate == 0.0
     assert summary.usage_event_count == 0
+    assert summary.pass_ is True
 
 
-def test_load_test_parser_supports_proxy_and_real_ollama_modes():
+def test_load_test_parser_supports_proxy_and_limited_scenario_options():
     parser = build_parser()
 
-    proxy_args = parser.parse_args(
+    args = parser.parse_args(
         [
-            "--mode",
-            "proxy-overhead",
             "--requests",
             "25",
             "--concurrency",
             "5",
-            "--set-request-limit",
+            "--limited-allowed",
             "10",
         ]
     )
-    real_args = parser.parse_args(["--mode", "real-ollama", "--model", "llama3.2:1b"])
 
-    assert proxy_args.mode == "proxy-overhead"
-    assert proxy_args.requests == 25
-    assert proxy_args.concurrency == 5
-    assert proxy_args.set_request_limit == 10
-    assert real_args.mode == "real-ollama"
-    assert real_args.model == "llama3.2:1b"
+    assert args.requests == 25
+    assert args.concurrency == 5
+    assert args.limited_allowed == 10
+    assert args.model == "llama3.2:1b"

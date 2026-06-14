@@ -1,50 +1,16 @@
 import logging
-import sqlite3
 from typing import Any
 
 from fastapi.testclient import TestClient
 
 from app.clients.ollama import OllamaClient
-from app.config import Settings
-from app.db import initialize_database
 from app.errors import UpstreamServiceError
-from app.main import create_app
-from scripts.seed_dev_data import seed_dev_data
-
-
-def seeded_app(tmp_path):
-    settings = Settings(database_path=tmp_path / "proxy.sqlite3")
-    initialize_database(settings.database_path)
-    seed_dev_data(settings.database_path)
-    return create_app(settings), settings.database_path
-
-
-def usage_rows(database_path):
-    with sqlite3.connect(database_path) as connection:
-        return connection.execute(
-            """
-            SELECT user_id, model, prompt_tokens, completion_tokens, total_tokens, status
-            FROM usage_events
-            ORDER BY id
-            """
-        ).fetchall()
-
-
-def usage_totals(database_path):
-    with sqlite3.connect(database_path) as connection:
-        return connection.execute(
-            """
-            SELECT user_id, model, prompt_tokens, completion_tokens, total_tokens, request_count
-            FROM usage_totals
-            ORDER BY user_id, model
-            """
-        ).fetchall()
 
 
 def test_chat_completion_forwards_non_streaming_request_and_records_usage(
-    tmp_path, monkeypatch, caplog
+    seeded_app, usage_rows, usage_totals, monkeypatch, caplog
 ):
-    app, database_path = seeded_app(tmp_path)
+    app, database_path = seeded_app()
     forwarded_payloads: list[dict[str, Any]] = []
 
     async def fake_create_chat_completion(self, payload):
@@ -103,9 +69,9 @@ def test_chat_completion_forwards_non_streaming_request_and_records_usage(
 
 
 def test_chat_completion_compatibility_route_records_totals_per_user_and_model(
-    tmp_path, monkeypatch
+    seeded_app, usage_totals, monkeypatch
 ):
-    app, database_path = seeded_app(tmp_path)
+    app, database_path = seeded_app()
 
     async def fake_create_chat_completion(self, payload):
         return {
@@ -145,8 +111,10 @@ def test_chat_completion_compatibility_route_records_totals_per_user_and_model(
     assert usage_totals(database_path) == [("user_b", "llama3.2", 8, 4, 12, 2)]
 
 
-def test_chat_completion_rejects_disallowed_model_without_billing(tmp_path, monkeypatch, caplog):
-    app, database_path = seeded_app(tmp_path)
+def test_chat_completion_rejects_disallowed_model_without_billing(
+    seeded_app, usage_rows, monkeypatch, caplog
+):
+    app, database_path = seeded_app()
     calls = 0
 
     async def fake_create_chat_completion(self, payload):
@@ -186,8 +154,8 @@ def test_chat_completion_rejects_disallowed_model_without_billing(tmp_path, monk
     assert "hello" not in caplog.text
 
 
-def test_chat_completion_invalid_auth_is_not_billed(tmp_path, monkeypatch, caplog):
-    app, database_path = seeded_app(tmp_path)
+def test_chat_completion_invalid_auth_is_not_billed(seeded_app, usage_rows, monkeypatch, caplog):
+    app, database_path = seeded_app()
     calls = 0
 
     async def fake_create_chat_completion(self, payload):
@@ -218,8 +186,10 @@ def test_chat_completion_invalid_auth_is_not_billed(tmp_path, monkeypatch, caplo
     assert "hello" not in caplog.text
 
 
-def test_chat_completion_upstream_failure_is_not_billed(tmp_path, monkeypatch, caplog):
-    app, database_path = seeded_app(tmp_path)
+def test_chat_completion_upstream_failure_is_not_billed(
+    seeded_app, usage_rows, usage_totals, monkeypatch, caplog
+):
+    app, database_path = seeded_app()
 
     async def fake_create_chat_completion(self, payload):
         raise UpstreamServiceError("Ollama is unavailable")
@@ -235,7 +205,7 @@ def test_chat_completion_upstream_failure_is_not_billed(tmp_path, monkeypatch, c
                 "model": "llama3.2:1b",
                 "messages": [{"role": "user", "content": "hello"}],
             },
-    )
+        )
 
     assert response.status_code == 502
     assert usage_rows(database_path) == [("user_a", "llama3.2:1b", 0, 0, 0, "failed")]

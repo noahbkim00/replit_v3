@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 import sqlite3
@@ -6,15 +5,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
 
-from app.api import deps
 from app.clients.ollama import OllamaClient
-from app.config import Settings
 from app.db import initialize_database
-from app.main import create_app
-from app.repositories.users import User
 from scripts.seed_dev_data import seed_dev_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -65,11 +59,8 @@ def test_seed_script_does_not_require_pydantic_for_database_path(tmp_path):
     assert database_path.exists()
 
 
-def test_models_endpoint_rejects_missing_and_invalid_tokens(tmp_path, caplog):
-    settings = Settings(database_path=tmp_path / "proxy.sqlite3")
-    initialize_database(settings.database_path)
-    seed_dev_data(settings.database_path)
-    app = create_app(settings)
+def test_models_endpoint_rejects_missing_and_invalid_tokens(seeded_app, caplog):
+    app, _database_path = seeded_app()
 
     caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
@@ -89,32 +80,8 @@ def test_models_endpoint_rejects_missing_and_invalid_tokens(tmp_path, caplog):
     assert "Authorization" not in caplog.text
 
 
-def test_require_user_runs_authentication_in_threadpool(monkeypatch):
-    calls = []
-
-    async def fake_to_thread(fn, *args):
-        calls.append((fn, args))
-        return fn(*args)
-
-    monkeypatch.setattr(deps.asyncio, "to_thread", fake_to_thread)
-    auth_service = _FakeAuthService()
-
-    user = asyncio.run(
-        deps.require_user(
-            HTTPAuthorizationCredentials(scheme="Bearer", credentials="dev-token-user-a"),
-            auth_service,
-        )
-    )
-
-    assert user.id == "user_a"
-    assert calls == [(auth_service.authenticate, ("dev-token-user-a",))]
-
-
-def test_models_routes_forward_to_ollama_and_filter_to_allowlist(tmp_path, monkeypatch):
-    settings = Settings(database_path=tmp_path / "proxy.sqlite3")
-    initialize_database(settings.database_path)
-    seed_dev_data(settings.database_path)
-    app = create_app(settings)
+def test_models_routes_forward_to_ollama_and_filter_to_allowlist(seeded_app, monkeypatch):
+    app, _database_path = seeded_app()
     calls = 0
 
     async def fake_list_models(self):
@@ -125,7 +92,8 @@ def test_models_routes_forward_to_ollama_and_filter_to_allowlist(tmp_path, monke
             "data": [
                 {"id": "llama3.2", "object": "model", "owned_by": "ollama"},
                 {"id": "not-allowed", "object": "model", "owned_by": "ollama"},
-                {"id": "moondream", "object": "model", "owned_by": "ollama"},
+                {"id": "not-allowed:latest", "object": "model", "owned_by": "ollama"},
+                {"id": "moondream:latest", "object": "model", "owned_by": "ollama"},
             ],
         }
 
@@ -143,21 +111,15 @@ def test_models_routes_forward_to_ollama_and_filter_to_allowlist(tmp_path, monke
         "object": "list",
         "data": [
             {"id": "llama3.2", "object": "model", "owned_by": "ollama"},
-            {"id": "moondream", "object": "model", "owned_by": "ollama"},
+            {"id": "moondream:latest", "object": "model", "owned_by": "ollama"},
         ],
     }
     assert compatibility_response.json() == v1_response.json()
     assert calls == 2
 
 
-def test_models_endpoint_returns_clean_error_when_ollama_is_unavailable(tmp_path, caplog):
-    settings = Settings(
-        database_path=tmp_path / "proxy.sqlite3",
-        ollama_base_url="http://127.0.0.1:9/v1",
-    )
-    initialize_database(settings.database_path)
-    seed_dev_data(settings.database_path)
-    app = create_app(settings)
+def test_models_endpoint_returns_clean_error_when_ollama_is_unavailable(seeded_app, caplog):
+    app, _database_path = seeded_app(ollama_base_url="http://127.0.0.1:9/v1")
 
     caplog.set_level(logging.WARNING)
     with TestClient(app) as client:
@@ -177,10 +139,3 @@ def test_models_endpoint_returns_clean_error_when_ollama_is_unavailable(tmp_path
     assert upstream_failures[0].endpoint == "/models"
     assert upstream_failures[0].reason == "unavailable"
     assert "dev-token-user-a" not in caplog.text
-
-
-class _FakeAuthService:
-    def authenticate(self, token: str) -> User | None:
-        if token == "dev-token-user-a":
-            return User(id="user_a", display_name="User A", role="user")
-        return None
