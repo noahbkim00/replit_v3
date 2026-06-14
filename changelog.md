@@ -1,5 +1,93 @@
 # Changelog
 
+## Changes Logged on Empty — Phase 5
+
+### Changes Made
+
+- Added `scripts/mock_ollama.py`, a small FastAPI mock of Ollama's
+  OpenAI-compatible `/v1/models` and `/v1/chat/completions` endpoints.
+- The mock supports non-streaming and streaming chat responses, configurable model
+  IDs, configurable synthetic latency, and deterministic usage token counts.
+- Added `scripts/load_test.py`, an async HTTPX load runner for the proxy's
+  `/v1/chat/completions` path.
+- The load runner reports requests per second, p50 latency, p95 latency, p99
+  latency, error rate, limit rejection rate, usage event delta, and usage-total
+  comparison fields.
+- Added load-test support for `proxy-overhead` and `real-ollama` modes so mock
+  upstream results can be reported separately from hardware-bound local Ollama
+  generation results.
+- Added admin-limit setup options to the load runner: `--set-request-limit` for
+  concurrent rejection tests and `--clear-limits` for resetting local runs.
+- Added focused Phase 5 tests in `tests/test_phase5.py` for metric calculation,
+  empty-result behavior, and CLI mode/limit argument parsing.
+- Updated `testing.md` with Phase 5 automated checks, mock-server startup, proxy
+  startup against the mock, proxy-overhead load-test commands, metric
+  interpretation, concurrent limit-rejection checks, usage-event inspection, and
+  real-Ollama load-test workflow.
+
+### Verification Steps Performed
+
+- `python3 -m pytest tests/test_phase5.py -q` failed before implementation with
+  `ModuleNotFoundError: No module named 'scripts.load_test'`.
+- `python3 -m pytest tests/test_phase5.py -q` passed after implementation with 3
+  tests.
+- `python3 -m pytest -q` passed after implementation with 26 tests.
+- `python3 -m ruff check scripts/load_test.py scripts/mock_ollama.py
+  tests/test_phase5.py` initially failed on import ordering in
+  `scripts/mock_ollama.py`.
+- `python3 -m ruff check scripts/mock_ollama.py --fix` fixed the import order.
+- `python3 -m ruff check .` passed.
+- `DATABASE_PATH=/tmp/replit-v3-phase5-smoke.sqlite3 python3
+  scripts/seed_dev_data.py` passed and printed the development tokens.
+- `python3 scripts/mock_ollama.py --host 127.0.0.1 --port 11435` started the mock
+  Ollama server successfully.
+- `DATABASE_PATH=/tmp/replit-v3-phase5-smoke.sqlite3
+  OLLAMA_BASE_URL=http://127.0.0.1:11435/v1 uvicorn app.main:app --host
+  127.0.0.1 --port 8025` started the proxy against the mock successfully.
+- `python3 scripts/load_test.py --proxy-url http://127.0.0.1:8025 --requests 40
+  --concurrency 10 --clear-limits` passed with 40 successful requests, 0.0 error
+  rate, 40 usage events, and usage totals matching successes.
+- `python3 scripts/load_test.py --proxy-url http://127.0.0.1:8025 --requests 12
+  --concurrency 6 --set-request-limit 1` passed with 12 limit rejections, 1.0
+  limit rejection rate, 0 usage events, and usage totals matching successes.
+- `ollama list` showed local `llama3.2:1b` available.
+- `DATABASE_PATH=/tmp/replit-v3-phase5-real.sqlite3 python3
+  scripts/seed_dev_data.py` passed and printed the development tokens.
+- `DATABASE_PATH=/tmp/replit-v3-phase5-real.sqlite3 uvicorn app.main:app --host
+  127.0.0.1 --port 8026` started the proxy against local Ollama successfully.
+- `python3 scripts/load_test.py --mode real-ollama --proxy-url
+  http://127.0.0.1:8026 --requests 2 --concurrency 1 --model llama3.2:1b
+  --max-tokens 1 --clear-limits --timeout-seconds 60` passed with 2 successful
+  requests, 0.0 error rate, 2 usage events, and usage totals matching successes.
+- `DATABASE_PATH=/tmp/replit-v3-phase5-workers.sqlite3 python3
+  scripts/seed_dev_data.py` passed and printed the development tokens.
+- `python3 -m uvicorn scripts.mock_ollama:create_app --factory --host 127.0.0.1
+  --port 11436 --no-access-log` started the mock Ollama server successfully.
+- `DATABASE_PATH=/tmp/replit-v3-phase5-workers.sqlite3
+  OLLAMA_BASE_URL=http://127.0.0.1:11436/v1 uvicorn app.main:app --host
+  127.0.0.1 --port 8028 --no-access-log --workers 4` started the proxy against
+  the mock successfully.
+- `python3 scripts/load_test.py --proxy-url http://127.0.0.1:8028 --requests 400
+  --concurrency 200 --clear-limits --timeout-seconds 60` passed with 400
+  successful requests, 0.0 error rate, 400 usage events, usage totals matching
+  successes, and 229 RPS.
+
+### Deviations From the Plan
+
+- No proxy architecture changes were made for Phase 5.
+- The repeatable hundreds-of-RPS proxy-overhead run uses Uvicorn runtime settings
+  (`--workers 4` and `--no-access-log`) rather than changing application code.
+- The real-Ollama verification was intentionally a tiny smoke test rather than a
+  high-throughput run.
+
+### Deviation Rationale
+
+- Multiple Uvicorn workers are a deployment/runtime configuration and keep Phase 5
+  scoped to load testing while still exercising auth, model validation, limit
+  checks, Ollama forwarding, and SQLite usage recording through the real proxy path.
+- Local Ollama generation is hardware-bound and not evidence of proxy overhead, so
+  it is reported separately from the mock-upstream test.
+
 ## Changes Logged on Empty — Phase 4
 
 ### Changes Made

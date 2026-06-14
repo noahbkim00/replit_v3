@@ -565,3 +565,168 @@ exceeds either configured cap, the response should be `429`:
 
 The proxy uses `max_tokens` as the token projection for this preflight check, and
 the rejected request does not reach Ollama or create a successful usage event.
+
+## Phase 5 Checks
+
+Run the automated Phase 5 checks:
+
+```bash
+python -m pytest tests/test_phase5.py
+python -m pytest
+python -m ruff check .
+```
+
+### Proxy Overhead Load Test With Mock Ollama
+
+Use a temporary database for repeatable load-test runs:
+
+```bash
+DATABASE_PATH=/tmp/replit-v3-load.sqlite3 python scripts/seed_dev_data.py
+```
+
+Start the mock Ollama server in one terminal. The mock serves OpenAI-compatible
+model and chat endpoints without real generation latency:
+
+```bash
+python -m uvicorn scripts.mock_ollama:create_app \
+  --factory \
+  --host 127.0.0.1 \
+  --port 11435 \
+  --no-access-log
+```
+
+Start the proxy in another terminal and point it at the mock. Multiple Uvicorn
+workers are useful for measuring proxy overhead rather than single-process server
+serialization:
+
+```bash
+DATABASE_PATH=/tmp/replit-v3-load.sqlite3 \
+OLLAMA_BASE_URL=http://127.0.0.1:11435/v1 \
+uvicorn app.main:app \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --workers 4 \
+  --no-access-log
+```
+
+Run the proxy overhead load test:
+
+```bash
+python scripts/load_test.py \
+  --mode proxy-overhead \
+  --proxy-url http://127.0.0.1:8000 \
+  --requests 400 \
+  --concurrency 200 \
+  --clear-limits
+```
+
+The JSON report includes:
+
+- `requests_per_second`: completed requests divided by measured elapsed time.
+- `p50_latency_ms`, `p95_latency_ms`, `p99_latency_ms`: observed client-side
+  request latency percentiles.
+- `error_rate`: non-2xx responses plus client/network errors divided by total
+  requests.
+- `limit_rejection_rate`: `429` or `rate_limit_exceeded` responses divided by
+  total requests.
+- `usage_event_count`: the delta in `GET /usage/events` count before and after
+  the run.
+- `usage_comparison.usage_events_match_successes`: should be `true` when each
+  successful request created exactly one usage event.
+- `usage_comparison.usage_totals_match_successes`: should be `true` when
+  `GET /usage` request-count totals increased by the successful request count.
+
+For the proxy overhead test, expect `error_rate` and `limit_rejection_rate` to be
+`0.0`, and expect `usage_event_count` to equal `successful_requests`. On the
+verification machine, this workflow produced 400 successful requests, 400 usage
+events, and 229 RPS.
+
+You can also inspect persisted usage directly:
+
+```bash
+sqlite3 /tmp/replit-v3-load.sqlite3 \
+  "SELECT COUNT(*) FROM usage_events WHERE user_id = 'user_a' AND status = 'success';"
+
+sqlite3 /tmp/replit-v3-load.sqlite3 \
+  "SELECT request_count, total_tokens FROM usage_totals WHERE user_id = 'user_a' AND model = 'llama3.2:1b';"
+```
+
+### Limit Rejection Behavior Under Concurrency
+
+After the successful overhead run above, set a low request limit and run concurrent
+requests again:
+
+```bash
+python scripts/load_test.py \
+  --mode proxy-overhead \
+  --proxy-url http://127.0.0.1:8000 \
+  --requests 50 \
+  --concurrency 25 \
+  --set-request-limit 1
+```
+
+Because the same user already has recent successful usage, the run should return
+`429` responses. Expected interpretation:
+
+- `limit_rejections` should be greater than `0`; if the prior overhead run was
+  recent, it should equal `total_requests`.
+- `limit_rejection_rate` should be greater than `0.0`.
+- `usage_event_count` should be `0` when all requests are rejected.
+- `usage_comparison.usage_events_match_successes` should remain `true`.
+
+Clear limits before returning to normal manual testing:
+
+```bash
+python scripts/load_test.py \
+  --proxy-url http://127.0.0.1:8000 \
+  --requests 0 \
+  --concurrency 1 \
+  --clear-limits
+```
+
+### Real Ollama Load Test
+
+The real Ollama test uses the same proxy path but points the proxy at local Ollama
+instead of `scripts/mock_ollama.py`. Report these results separately because token
+generation speed is hardware-bound.
+
+Make sure Ollama is running and the small model is available:
+
+```bash
+ollama serve
+ollama pull llama3.2:1b
+```
+
+Use a separate temporary database:
+
+```bash
+DATABASE_PATH=/tmp/replit-v3-real-load.sqlite3 python scripts/seed_dev_data.py
+```
+
+Start the proxy with the default Ollama base URL:
+
+```bash
+DATABASE_PATH=/tmp/replit-v3-real-load.sqlite3 \
+uvicorn app.main:app \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --no-access-log
+```
+
+Run a smaller hardware-bound test:
+
+```bash
+python scripts/load_test.py \
+  --mode real-ollama \
+  --proxy-url http://127.0.0.1:8000 \
+  --model llama3.2:1b \
+  --requests 10 \
+  --concurrency 2 \
+  --max-tokens 16 \
+  --clear-limits \
+  --timeout-seconds 60
+```
+
+Interpret usage metrics the same way as the mock test: successful real-Ollama
+requests should create matching usage events and usage-total request-count deltas.
+RPS and latency are expected to be much lower than the mock proxy-overhead test.
