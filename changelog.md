@@ -217,7 +217,7 @@
 
 ### Deviations From the Plan
 
-- No implementation deviations from `docs/minimal_logging_plan.md`.
+- No implementation deviations from the minimal logging plan.
 - The optional local Uvicorn smoke check was documented in `testing.md` but not run
   as part of this automated verification pass.
 
