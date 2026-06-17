@@ -21,6 +21,7 @@ DEMO_STREAMING_TOKEN ?= dev-token-demo-streaming
 DEMO_USAGE_A_TOKEN ?= dev-token-demo-usage-a
 DEMO_USAGE_B_TOKEN ?= dev-token-demo-usage-b
 DEMO_LIMITS_TOKEN ?= dev-token-demo-limits
+DEMO_REPORT_TOKEN ?= dev-token-demo-report
 DEMO_CONCURRENCY_A_TOKEN ?= dev-token-demo-concurrency-a
 DEMO_CONCURRENCY_B_TOKEN ?= dev-token-demo-concurrency-b
 DEMO_LOAD_TOKEN ?= dev-token-demo-load-open
@@ -29,6 +30,7 @@ DEMO_LOAD_LIMITED_TOKEN ?= dev-token-demo-load-limited
 DEMO_USAGE_A_USER_ID ?= demo_usage_a
 DEMO_USAGE_B_USER_ID ?= demo_usage_b
 DEMO_LIMITS_USER_ID ?= demo_limits
+DEMO_REPORT_USER_ID ?= demo_report
 DEMO_CONCURRENCY_A_USER_ID ?= demo_concurrency_a
 DEMO_CONCURRENCY_B_USER_ID ?= demo_concurrency_b
 DEMO_LOAD_USER_ID ?= demo_load_open
@@ -46,7 +48,7 @@ DEMO_MODEL_ARGS = --text-model $(TEXT_MODEL) --vision-model $(VISION_MODEL)
 DEMO_ADMIN_ARGS = --admin-api-key $(ADMIN_TOKEN)
 
 .DEFAULT_GOAL := help
-.PHONY: help install setup seed start start-demo doctor ollama-pull ollama-check test test-file lint format check demo demo-standard demo-streaming demo-usage demo-limits demo-concurrency demo-load demos demos-full mock-ollama load-test reset-demo-db
+.PHONY: help install setup seed start start-demo doctor ollama-pull ollama-check test test-file lint format check demo demo-standard demo-streaming demo-usage demo-limits demo-report demo-concurrency demo-load demos demos-full mock-ollama load-test reset-demo-db
 
 help:
 	@printf "%s\n" "FastAPI Ollama Proxy Make targets"
@@ -71,15 +73,15 @@ help:
 	@printf "%s\n" ""
 	@printf "%s\n" "Demos:"
 	@printf "%s\n" "  make demo DEMO=standard"
-	@printf "%s\n" "  make demo-standard | demo-streaming | demo-usage | demo-limits"
+	@printf "%s\n" "  make demo-standard | demo-streaming | demo-usage | demo-limits | demo-report"
 	@printf "%s\n" "  make demo-concurrency | demo-load"
-	@printf "%s\n" "  make demos            Run standard, streaming, usage, limits"
+	@printf "%s\n" "  make demos            Run standard, streaming, usage, limits, report"
 	@printf "%s\n" "  make demos-full       Run demos plus concurrency and load"
 	@printf "%s\n" ""
 	@printf "%s\n" "Common variables:"
 	@printf "%s\n" "  PORT=8000 BASE_URL=http://127.0.0.1:8000 DATABASE_PATH=data/proxy.sqlite3"
 	@printf "%s\n" "  Manual tokens: USER_A_TOKEN USER_B_TOKEN ADMIN_TOKEN"
-	@printf "%s\n" "  Demo tokens: DEMO_STANDARD_TOKEN DEMO_STREAMING_TOKEN DEMO_LIMITS_TOKEN"
+	@printf "%s\n" "  Demo tokens: DEMO_STANDARD_TOKEN DEMO_STREAMING_TOKEN DEMO_LIMITS_TOKEN DEMO_REPORT_TOKEN"
 	@printf "%s\n" "  Demo users: DEMO_USAGE_A_USER_ID DEMO_CONCURRENCY_A_USER_ID DEMO_LOAD_USER_ID"
 
 install:
@@ -147,8 +149,8 @@ check: lint test
 
 demo:
 	@case "$(DEMO)" in \
-		standard|streaming|usage|limits|concurrency|load) $(MAKE) demo-$(DEMO) ;; \
-		*) printf "%s\n" "Unknown DEMO=$(DEMO). Use standard, streaming, usage, limits, concurrency, or load."; exit 2 ;; \
+		standard|streaming|usage|limits|report|concurrency|load) $(MAKE) demo-$(DEMO) ;; \
+		*) printf "%s\n" "Unknown DEMO=$(DEMO). Use standard, streaming, usage, limits, report, concurrency, or load."; exit 2 ;; \
 	esac
 
 demo-standard:
@@ -163,13 +165,16 @@ demo-usage:
 demo-limits:
 	$(RUN) scripts/demo_limits.py $(DEMO_COMMON_ARGS) --api-key $(DEMO_LIMITS_TOKEN) $(DEMO_MODEL_ARGS) $(DEMO_ADMIN_ARGS) --user-id $(DEMO_LIMITS_USER_ID)
 
+demo-report:
+	$(RUN) scripts/demo_usage_report.py $(DEMO_COMMON_ARGS) --api-key $(DEMO_REPORT_TOKEN) $(DEMO_MODEL_ARGS) $(DEMO_ADMIN_ARGS) --user-id $(DEMO_REPORT_USER_ID)
+
 demo-concurrency:
 	$(RUN) scripts/demo_concurrency.py $(DEMO_COMMON_ARGS) $(DEMO_MODEL_ARGS) $(DEMO_ADMIN_ARGS) --concurrency-user-a-id $(DEMO_CONCURRENCY_A_USER_ID) --concurrency-user-a-api-key $(DEMO_CONCURRENCY_A_TOKEN) --concurrency-user-b-id $(DEMO_CONCURRENCY_B_USER_ID) --concurrency-user-b-api-key $(DEMO_CONCURRENCY_B_TOKEN)
 
 demo-load:
 	$(RUN) scripts/demo_load_test.py --proxy-url $(BASE_URL) --api-key $(DEMO_LOAD_TOKEN) --user-id $(DEMO_LOAD_USER_ID) --limited-api-key $(DEMO_LOAD_LIMITED_TOKEN) --limited-user-id $(DEMO_LOAD_LIMITED_USER_ID) --admin-api-key $(ADMIN_TOKEN) --model $(TEXT_MODEL) --requests $(REQUESTS) --concurrency $(CONCURRENCY) --limited-allowed $(LIMITED_ALLOWED) --timeout-seconds $(OLLAMA_TIMEOUT_SECONDS)
 
-demos: demo-standard demo-streaming demo-usage demo-limits
+demos: demo-standard demo-streaming demo-usage demo-limits demo-report
 
 demos-full: demos demo-concurrency demo-load
 

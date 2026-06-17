@@ -72,3 +72,46 @@ class UserRepository:
                 """,
                 (token_id, user_id, hash_api_token(token), name),
             )
+
+    def upsert_admin_user_association(self, admin_user_id: str, user_id: str) -> None:
+        with connect_database(self._database_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO admin_user_associations (admin_user_id, user_id)
+                VALUES (?, ?)
+                ON CONFLICT(admin_user_id, user_id) DO NOTHING
+                """,
+                (admin_user_id, user_id),
+            )
+
+    def list_users_for_admin(self, admin_user_id: str) -> list[User]:
+        with connect_database(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT users.id, users.display_name, users.role
+                FROM admin_user_associations
+                JOIN users ON users.id = admin_user_associations.user_id
+                WHERE admin_user_associations.admin_user_id = ?
+                  AND users.is_active = 1
+                ORDER BY users.id
+                """,
+                (admin_user_id,),
+            ).fetchall()
+
+        return [User(id=row[0], display_name=row[1], role=row[2]) for row in rows]
+
+    def admin_can_access_user(self, admin_user_id: str, user_id: str) -> bool:
+        with connect_database(self._database_path) as connection:
+            row = connection.execute(
+                """
+                SELECT 1
+                FROM admin_user_associations
+                JOIN users ON users.id = admin_user_associations.user_id
+                WHERE admin_user_associations.admin_user_id = ?
+                  AND admin_user_associations.user_id = ?
+                  AND users.is_active = 1
+                """,
+                (admin_user_id, user_id),
+            ).fetchone()
+
+        return row is not None

@@ -149,6 +149,88 @@ class UsageRepository:
             for row in rows
         ]
 
+    def list_recent_usage_events(self, user_id: str, limit: int) -> list[dict[str, Any]]:
+        bounded_limit = max(limit, 0)
+        with connect_database(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    user_id,
+                    model,
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens,
+                    latency_ms,
+                    status,
+                    timestamp
+                FROM usage_events
+                WHERE user_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (user_id, bounded_limit),
+            ).fetchall()
+
+        return [
+            {
+                "id": row[0],
+                "user_id": row[1],
+                "model": row[2],
+                "prompt_tokens": row[3],
+                "completion_tokens": row[4],
+                "total_tokens": row[5],
+                "latency_ms": row[6],
+                "status": row[7],
+                "timestamp": row[8],
+            }
+            for row in rows
+        ]
+
+    def list_recent_usage_events_for_users(
+        self, user_ids: list[str], limit: int
+    ) -> list[dict[str, Any]]:
+        bounded_limit = max(limit, 0)
+        if not user_ids or bounded_limit == 0:
+            return []
+
+        placeholders = ",".join("?" for _ in user_ids)
+        with connect_database(self._database_path) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    id,
+                    user_id,
+                    model,
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens,
+                    latency_ms,
+                    status,
+                    timestamp
+                FROM usage_events
+                WHERE user_id IN ({placeholders})
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (*user_ids, bounded_limit),
+            ).fetchall()
+
+        return [
+            {
+                "id": row[0],
+                "user_id": row[1],
+                "model": row[2],
+                "prompt_tokens": row[3],
+                "completion_tokens": row[4],
+                "total_tokens": row[5],
+                "latency_ms": row[6],
+                "status": row[7],
+                "timestamp": row[8],
+            }
+            for row in rows
+        ]
+
     def count_recent_successful_requests(self, user_id: str, seconds: int) -> int:
         with connect_database(self._database_path) as connection:
             row = connection.execute(

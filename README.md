@@ -97,6 +97,7 @@ and audit events from one demo do not affect another.
 | Usage A | `demo_usage_a` | `dev-token-demo-usage-a` |
 | Usage B | `demo_usage_b` | `dev-token-demo-usage-b` |
 | Limits | `demo_limits` | `dev-token-demo-limits` |
+| Usage Report | `demo_report` | `dev-token-demo-report` |
 | Concurrency A | `demo_concurrency_a` | `dev-token-demo-concurrency-a` |
 | Concurrency B | `demo_concurrency_b` | `dev-token-demo-concurrency-b` |
 | Load Open | `demo_load_open` | `dev-token-demo-load-open` |
@@ -170,6 +171,7 @@ make demo-standard
 make demo-streaming
 make demo-usage
 make demo-limits
+make demo-report
 make demo-concurrency
 make demo-load REQUESTS=300 CONCURRENCY=50 LIMITED_ALLOWED=150
 ```
@@ -181,6 +183,147 @@ make demos
 ```
 
 See `testing.md` for the full testing and demo workflow.
+
+## Usage Report
+
+The bonus feature is a read-only HTML report for usage and limits. You can open
+the browser helper directly and enter a seeded user token, or use admin mode
+with the admin token to view all users associated with that admin:
+
+```bash
+open http://127.0.0.1:8000/usage/report/browser
+```
+
+The helper sends tokens only as `Authorization: Bearer ...` headers with
+JavaScript `fetch`; it does not put tokens in URLs, cookies, or browser storage.
+
+The underlying user report endpoint still requires bearer auth and is useful for
+curl-based inspection:
+
+```bash
+curl http://127.0.0.1:8000/usage/report \
+  -H "Authorization: Bearer dev-token-demo-report" \
+  -o /tmp/replit-v3-usage-report.html
+open /tmp/replit-v3-usage-report.html
+```
+
+Admins can render an associated-users report:
+
+```bash
+curl http://127.0.0.1:8000/admin/usage/report \
+  -H "Authorization: Bearer dev-token-admin" \
+  -o /tmp/replit-v3-admin-usage-report.html
+open /tmp/replit-v3-admin-usage-report.html
+```
+
+Admins can also render a detail report for one associated user:
+
+```bash
+curl http://127.0.0.1:8000/admin/users/demo_report/usage/report \
+  -H "Authorization: Bearer dev-token-admin"
+```
+
+### End-To-End Usage Report Test
+
+Use this exact flow to test the report with real Ollama, real proxy requests,
+and a fresh SQLite database. The examples use port `8121` so they do not assume
+that port `8000` is free.
+
+1. In terminal 1, start Ollama and leave it running:
+
+```bash
+ollama serve
+```
+
+If the models are not installed yet, run this once from another terminal:
+
+```bash
+make ollama-pull
+```
+
+2. In terminal 2, create a fresh report database, seed tokens, and start the
+   proxy. Leave this terminal running:
+
+```bash
+rm -f /tmp/replit-v3-report-test.sqlite3*
+DATABASE_PATH=/tmp/replit-v3-report-test.sqlite3 make seed
+
+DATABASE_PATH=/tmp/replit-v3-report-test.sqlite3 \
+OLLAMA_BASE_URL=http://localhost:11434/v1 \
+make start PORT=8121 BASE_URL=http://127.0.0.1:8121
+```
+
+3. In terminal 3, run the usage report demo. This sends a real chat request
+   through the proxy using `dev-token-demo-report`, sets sample limits for
+   `demo_report`, fetches the user report and admin report, and writes HTML
+   files to `/tmp`:
+
+```bash
+make demo-report PORT=8121 BASE_URL=http://127.0.0.1:8121
+```
+
+Expected output includes:
+
+```text
+usage-report:user PASS
+usage-report:admin PASS
+usage-report:browser PASS
+```
+
+4. Optional but useful: add more real usage rows for multiple users so the admin
+   report has more than one active user:
+
+```bash
+.venv/bin/python - <<'PY'
+from openai import OpenAI
+
+base_url = "http://127.0.0.1:8121/v1"
+requests = [
+    ("dev-token-user-a", "Reply with exactly: user a report row one"),
+    ("dev-token-user-a", "Reply with exactly: user a report row two"),
+    ("dev-token-user-b", "Reply with exactly: user b report row one"),
+    ("dev-token-demo-report", "Reply with exactly: demo report row one"),
+]
+
+for token, prompt in requests:
+    client = OpenAI(base_url=base_url, api_key=token, timeout=90)
+    response = client.chat.completions.create(
+        model="llama3.2:1b",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0,
+        max_tokens=16,
+    )
+    print(token, response.usage)
+PY
+```
+
+5. Open the browser helper:
+
+```bash
+open http://127.0.0.1:8121/usage/report/browser
+```
+
+6. Test these browser modes and tokens:
+
+| Mode | Token | Expected report |
+| --- | --- | --- |
+| `User` | `dev-token-demo-report` | Report for `demo_report` only. |
+| `User` | `dev-token-user-a` | Report for `user_a` only. |
+| `Admin` | `dev-token-admin` | Associated-users report for `admin`, including `user_a`, `user_b`, and `demo_report`. |
+| `Admin` | `dev-token-user-a` | Error: admin credentials required. |
+
+The browser helper sends the token as an `Authorization: Bearer ...` header. Do
+not put tokens in the URL.
+
+7. Verify the same reports with curl if you want to inspect raw HTML responses:
+
+```bash
+curl http://127.0.0.1:8121/usage/report \
+  -H "Authorization: Bearer dev-token-demo-report"
+
+curl http://127.0.0.1:8121/admin/usage/report \
+  -H "Authorization: Bearer dev-token-admin"
+```
 
 ## Common Make Commands
 
@@ -201,6 +344,7 @@ See `testing.md` for the full testing and demo workflow.
 | `make check` | Run Ruff and unit tests. |
 | `make demo DEMO=standard` | Run one selected demo. |
 | `make demos` | Run non-load real-Ollama demos. |
+| `make demo-report` | Generate usage, fetch the HTML report, and write it to `/tmp`. |
 | `make demo-load` | Run the heavier load demo separately. |
 
 ## Troubleshooting

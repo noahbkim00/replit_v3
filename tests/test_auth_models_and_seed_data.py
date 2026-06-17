@@ -23,6 +23,9 @@ def test_seed_dev_data_creates_users_tokens_and_model_allowlist(tmp_path):
     with sqlite3.connect(database_path) as connection:
         users = connection.execute("SELECT id, role FROM users ORDER BY id").fetchall()
         token_count = connection.execute("SELECT COUNT(*) FROM api_tokens").fetchone()
+        association_count = connection.execute(
+            "SELECT COUNT(*) FROM admin_user_associations"
+        ).fetchone()
         allowed_models = connection.execute(
             "SELECT model_id FROM model_allowlist ORDER BY model_id"
         ).fetchall()
@@ -34,6 +37,7 @@ def test_seed_dev_data_creates_users_tokens_and_model_allowlist(tmp_path):
         ("demo_limits", "user"),
         ("demo_load_limited", "user"),
         ("demo_load_open", "user"),
+        ("demo_report", "user"),
         ("demo_standard", "user"),
         ("demo_streaming", "user"),
         ("demo_usage_a", "user"),
@@ -42,6 +46,7 @@ def test_seed_dev_data_creates_users_tokens_and_model_allowlist(tmp_path):
         ("user_b", "user"),
     ]
     assert token_count == (len(DEV_TOKENS),)
+    assert association_count == (len(DEV_TOKENS) - 1,)
     assert allowed_models == [("llama3.2",), ("llama3.2:1b",), ("moondream",)]
 
 

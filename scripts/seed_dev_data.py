@@ -15,6 +15,7 @@ DEV_TOKENS = {
     "demo_usage_a": "dev-token-demo-usage-a",
     "demo_usage_b": "dev-token-demo-usage-b",
     "demo_limits": "dev-token-demo-limits",
+    "demo_report": "dev-token-demo-report",
     "demo_concurrency_a": "dev-token-demo-concurrency-a",
     "demo_concurrency_b": "dev-token-demo-concurrency-b",
     "demo_load_open": "dev-token-demo-load-open",
@@ -30,6 +31,7 @@ SEEDED_USERS = (
     ("demo_usage_a", "Demo Usage A", "user", "Usage demo A token"),
     ("demo_usage_b", "Demo Usage B", "user", "Usage demo B token"),
     ("demo_limits", "Demo Limits", "user", "Limits demo token"),
+    ("demo_report", "Demo Report", "user", "Usage report demo token"),
     ("demo_concurrency_a", "Demo Concurrency A", "user", "Concurrency demo A token"),
     ("demo_concurrency_b", "Demo Concurrency B", "user", "Concurrency demo B token"),
     ("demo_load_open", "Demo Load Open", "user", "Load demo no-limit token"),
@@ -51,6 +53,10 @@ def seed_dev_data(database_path: Path) -> None:
         token = DEV_TOKENS[user_id]
         user_repository.upsert_user(user_id, display_name, role=role)
         user_repository.upsert_api_token(token, user_id, token, token_name)
+
+    for user_id, _display_name, role, _token_name in SEEDED_USERS:
+        if role != "admin":
+            user_repository.upsert_admin_user_association("admin", user_id)
 
     model_repository = ModelRepository(database_path)
     for model_id in ALLOWED_MODELS:

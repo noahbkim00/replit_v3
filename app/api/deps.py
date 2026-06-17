@@ -17,6 +17,7 @@ from app.services.chat_proxy import ChatProxyService
 from app.services.limits import LimitService
 from app.services.models import ModelService
 from app.services.usage import UsageService
+from app.services.usage_report import UsageReportService
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,16 @@ def get_chat_proxy_service(
 
 def get_usage_service(settings: Annotated[Settings, Depends(get_settings)]) -> UsageService:
     return UsageService(UsageRepository(settings.database_path))
+
+
+def get_usage_report_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> UsageReportService:
+    return UsageReportService(
+        usage_repository=UsageRepository(settings.database_path),
+        limit_repository=LimitRepository(settings.database_path),
+        user_repository=UserRepository(settings.database_path),
+    )
 
 
 def get_limit_service(settings: Annotated[Settings, Depends(get_settings)]) -> LimitService:
