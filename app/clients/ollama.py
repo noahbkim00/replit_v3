@@ -13,9 +13,7 @@ class OllamaClient:
     def __init__(self, base_url: str, timeout_seconds: float = 30.0) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
-        self._client = httpx.AsyncClient(
-            base_url=self._base_url, timeout=self._timeout_seconds
-        )
+        self._client = httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout_seconds)
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -35,9 +33,7 @@ class OllamaClient:
             raise UpstreamServiceError("Ollama is unavailable") from exc
         except httpx.HTTPStatusError as exc:
             _log_upstream_failure(endpoint, status_code=exc.response.status_code)
-            raise UpstreamServiceError(
-                f"Ollama returned HTTP {exc.response.status_code}"
-            ) from exc
+            raise UpstreamServiceError(f"Ollama returned HTTP {exc.response.status_code}") from exc
         except ValueError as exc:
             _log_invalid_response(endpoint, reason="invalid_json")
             raise UpstreamServiceError("Ollama returned invalid JSON") from exc
@@ -63,9 +59,7 @@ class OllamaClient:
             raise UpstreamServiceError("Ollama is unavailable") from exc
         except httpx.HTTPStatusError as exc:
             _log_upstream_failure(endpoint, status_code=exc.response.status_code)
-            raise UpstreamServiceError(
-                f"Ollama returned HTTP {exc.response.status_code}"
-            ) from exc
+            raise UpstreamServiceError(f"Ollama returned HTTP {exc.response.status_code}") from exc
         except ValueError as exc:
             _log_invalid_response(endpoint, reason="invalid_json")
             raise UpstreamServiceError("Ollama returned invalid JSON") from exc
@@ -76,9 +70,7 @@ class OllamaClient:
 
         return response_payload
 
-    async def stream_chat_completion(
-        self, payload: dict[str, Any]
-    ) -> AsyncIterator[bytes]:
+    async def stream_chat_completion(self, payload: dict[str, Any]) -> AsyncIterator[bytes]:
         endpoint = "/chat/completions"
         timeout = httpx.Timeout(self._timeout_seconds, read=None)
         try:
@@ -101,9 +93,7 @@ class OllamaClient:
             raise UpstreamServiceError("Ollama is unavailable") from exc
         except httpx.HTTPStatusError as exc:
             _log_upstream_failure(endpoint, status_code=exc.response.status_code)
-            raise UpstreamServiceError(
-                f"Ollama returned HTTP {exc.response.status_code}"
-            ) from exc
+            raise UpstreamServiceError(f"Ollama returned HTTP {exc.response.status_code}") from exc
 
 
 def _log_upstream_failure(

@@ -3,7 +3,6 @@ import asyncio
 import json
 import sys
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
 from math import ceil
 from statistics import median
 from time import perf_counter
@@ -14,6 +13,7 @@ try:
         DemoFailure,
         build_openai_client,
         clear_limits,
+        ensure_fresh_limit_window,
         error_type_from_exception,
         get_usage,
         get_usage_events,
@@ -28,6 +28,7 @@ except ModuleNotFoundError:
         DemoFailure,
         build_openai_client,
         clear_limits,
+        ensure_fresh_limit_window,
         error_type_from_exception,
         get_usage,
         get_usage_events,
@@ -77,10 +78,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run no-limit and high-but-binding OpenAI-client load demos."
     )
     parser.add_argument("--proxy-url", default="http://127.0.0.1:8000")
-    parser.add_argument("--api-key", default="dev-token-user-a")
-    parser.add_argument("--limited-api-key", default="dev-token-user-b")
+    parser.add_argument("--api-key", default="dev-token-demo-load-open")
+    parser.add_argument("--user-id", default="demo_load_open")
+    parser.add_argument("--limited-api-key", default="dev-token-demo-load-limited")
     parser.add_argument("--admin-api-key", default="dev-token-admin")
-    parser.add_argument("--limited-user-id", default="user_b")
+    parser.add_argument("--limited-user-id", default="demo_load_limited")
     parser.add_argument("--model", default="llama3.2:1b")
     parser.add_argument("--requests", type=int, default=200)
     parser.add_argument("--concurrency", type=int, default=50)
@@ -238,9 +240,9 @@ def main() -> int:
         )
 
         with http_client(args.proxy_url, args.timeout_seconds) as client:
-            clear_limits(client, args.admin_api_key, "user_a")
+            clear_limits(client, args.admin_api_key, args.user_id)
             clear_limits(client, args.admin_api_key, args.limited_user_id)
-            ensure_fresh_limit_window(client, args.limited_api_key)
+            ensure_fresh_limit_window(client, args.limited_api_key, label="limited load scenario")
 
         no_limits = run_scenario(
             args,
@@ -282,29 +284,6 @@ def main() -> int:
         return 1
 
     return 0
-
-
-def ensure_fresh_limit_window(client, api_key: str) -> None:
-    recent_events = [
-        event
-        for event in get_usage_events(client, api_key).get("events", [])
-        if event.get("status") in {"reserved", "success"} and _is_recent(event.get("timestamp"))
-    ]
-    if recent_events:
-        raise DemoFailure(
-            "limited scenario needs a fresh 60-second request window for the limited user; "
-            "use a fresh demo database or wait 60 seconds before rerunning"
-        )
-
-
-def _is_recent(timestamp: Any) -> bool:
-    if not isinstance(timestamp, str):
-        return False
-    try:
-        parsed = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
-    except ValueError:
-        return False
-    return parsed >= datetime.now(UTC) - timedelta(seconds=60)
 
 
 def _summary_json(summary: LoadTestSummary, **extra: Any) -> str:

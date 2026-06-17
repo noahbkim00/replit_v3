@@ -1,6 +1,7 @@
 import argparse
 import base64
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -16,12 +17,16 @@ def add_common_args(
     *,
     include_admin: bool = False,
     include_models: bool = True,
+    api_key_default: str = "dev-token-user-a",
+    admin_api_key_default: str = "dev-token-admin",
+    include_api_key: bool = True,
 ) -> None:
     parser.add_argument("--proxy-url", default="http://127.0.0.1:8000")
-    parser.add_argument("--api-key", default="dev-token-user-a")
+    if include_api_key:
+        parser.add_argument("--api-key", default=api_key_default)
     parser.add_argument("--timeout-seconds", type=float, default=90.0)
     if include_admin:
-        parser.add_argument("--admin-api-key", default="dev-token-admin")
+        parser.add_argument("--admin-api-key", default=admin_api_key_default)
     if include_models:
         parser.add_argument("--text-model", default="llama3.2:1b")
         parser.add_argument("--vision-model", default="moondream")
@@ -150,6 +155,19 @@ def get_usage_events(client: httpx.Client, api_key: str) -> dict[str, Any]:
     return response.json()
 
 
+def ensure_fresh_limit_window(client: httpx.Client, api_key: str, *, label: str) -> None:
+    recent_events = [
+        event
+        for event in get_usage_events(client, api_key).get("events", [])
+        if event.get("status") in {"reserved", "success"} and _is_recent(event.get("timestamp"))
+    ]
+    if recent_events:
+        raise DemoFailure(
+            f"{label} needs a fresh 60-second request window; "
+            "use a fresh demo database or wait 60 seconds before rerunning"
+        )
+
+
 def get_admin_usage(client: httpx.Client, admin_api_key: str, user_id: str) -> dict[str, Any]:
     response = client.get(f"/admin/users/{user_id}/usage", headers=auth_headers(admin_api_key))
     response.raise_for_status()
@@ -220,3 +238,13 @@ def _error_type(response: httpx.Response) -> str | None:
         return None
     error_type = error.get("type")
     return error_type if isinstance(error_type, str) else None
+
+
+def _is_recent(timestamp: Any) -> bool:
+    if not isinstance(timestamp, str):
+        return False
+    try:
+        parsed = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+    except ValueError:
+        return False
+    return parsed >= datetime.now(UTC) - timedelta(seconds=60)

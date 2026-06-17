@@ -91,9 +91,7 @@ class QuotaRepository:
                     )
 
             if total_tokens is not None:
-                current_total_tokens = self._sum_reserved_and_successful_tokens(
-                    connection, user_id
-                )
+                current_total_tokens = self._sum_reserved_and_successful_tokens(connection, user_id)
                 if current_total_tokens + estimated_tokens > total_tokens:
                     raise QuotaLimitExceeded(
                         "Token limit exceeded for total_tokens",

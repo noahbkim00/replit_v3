@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.clients.ollama import OllamaClient
 from app.db import initialize_database
-from scripts.seed_dev_data import seed_dev_data
+from scripts.seed_dev_data import DEV_TOKENS, seed_dev_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,8 +27,21 @@ def test_seed_dev_data_creates_users_tokens_and_model_allowlist(tmp_path):
             "SELECT model_id FROM model_allowlist ORDER BY model_id"
         ).fetchall()
 
-    assert users == [("admin", "admin"), ("user_a", "user"), ("user_b", "user")]
-    assert token_count == (3,)
+    assert users == [
+        ("admin", "admin"),
+        ("demo_concurrency_a", "user"),
+        ("demo_concurrency_b", "user"),
+        ("demo_limits", "user"),
+        ("demo_load_limited", "user"),
+        ("demo_load_open", "user"),
+        ("demo_standard", "user"),
+        ("demo_streaming", "user"),
+        ("demo_usage_a", "user"),
+        ("demo_usage_b", "user"),
+        ("user_a", "user"),
+        ("user_b", "user"),
+    ]
+    assert token_count == (len(DEV_TOKENS),)
     assert allowed_models == [("llama3.2",), ("llama3.2:1b",), ("moondream",)]
 
 

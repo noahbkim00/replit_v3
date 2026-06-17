@@ -68,6 +68,15 @@ Seeded tokens:
 - `dev-token-user-a`
 - `dev-token-user-b`
 - `dev-token-admin`
+- `dev-token-demo-standard`
+- `dev-token-demo-streaming`
+- `dev-token-demo-usage-a`
+- `dev-token-demo-usage-b`
+- `dev-token-demo-limits`
+- `dev-token-demo-concurrency-a`
+- `dev-token-demo-concurrency-b`
+- `dev-token-demo-load-open`
+- `dev-token-demo-load-limited`
 
 Expected environment defaults:
 
@@ -105,9 +114,10 @@ The standard and streaming demos use the real `openai` package for text and
 vision chat completions. The usage, limits, concurrency, and load demos use the
 real `openai` package for chat traffic and `httpx` for proxy usage/admin APIs.
 
-The load demo uses `user_a` for the no-limit scenario and `user_b` for the
-limited scenario so the no-limit traffic does not consume the limited user's
-rolling request-per-minute window.
+Each demo uses dedicated `demo_*` users by default so usage totals, audit
+events, configured limits, and rolling request-per-minute windows do not
+interfere across demos. The load demo uses `demo_load_open` for the no-limit
+scenario and `demo_load_limited` for the limited scenario.
 
 ## Expected Failure Guidance
 
@@ -118,10 +128,11 @@ rolling request-per-minute window.
 - Missing models: run `make ollama-pull`.
 - Missing dependencies: run `make install`.
 - `demo_limits.py` first call is rate-limited: use a fresh demo database or wait
-  60 seconds, because request-per-minute limits count recent successful and
-  reserved usage rows.
+  60 seconds, because same-demo reruns can leave recent successful and reserved
+  usage rows in the request-per-minute window.
 - `demo_load_test.py` reports that the limited scenario needs a fresh window: use
-  a fresh demo database or wait 60 seconds before rerunning it.
+  a fresh demo database or wait 60 seconds before rerunning that limited
+  scenario.
 
 ## Manual Equivalents
 

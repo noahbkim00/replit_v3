@@ -6,6 +6,7 @@ from demo_helpers import (
     add_common_args,
     build_openai_client,
     clear_limits,
+    ensure_fresh_limit_window,
     error_type_from_exception,
     get_limits,
     get_usage,
@@ -23,8 +24,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Prove admin request limits reject before billing."
     )
-    add_common_args(parser, include_admin=True)
-    parser.add_argument("--user-id", default="user_a")
+    add_common_args(parser, include_admin=True, api_key_default="dev-token-demo-limits")
+    parser.add_argument("--user-id", default="demo_limits")
     return parser
 
 
@@ -42,6 +43,7 @@ def main() -> int:
         with http_client(args.proxy_url, args.timeout_seconds) as client:
             clear_limits(client, args.admin_api_key, args.user_id)
             limits_cleared = True
+            ensure_fresh_limit_window(client, args.api_key, label="limits demo")
             before = get_usage(client, args.api_key)
 
             set_limits(

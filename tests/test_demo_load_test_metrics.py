@@ -69,4 +69,8 @@ def test_load_test_parser_supports_proxy_and_limited_scenario_options():
     assert args.requests == 25
     assert args.concurrency == 5
     assert args.limited_allowed == 10
+    assert args.api_key == "dev-token-demo-load-open"
+    assert args.user_id == "demo_load_open"
+    assert args.limited_api_key == "dev-token-demo-load-limited"
+    assert args.limited_user_id == "demo_load_limited"
     assert args.model == "llama3.2:1b"

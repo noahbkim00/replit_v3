@@ -18,11 +18,6 @@ from demo_helpers import (
     usage_request_count,
 )
 
-USER_TOKENS = {
-    "user_a": "dev-token-user-a",
-    "user_b": "dev-token-user-b",
-}
-
 
 @dataclass(frozen=True)
 class CallResult:
@@ -35,9 +30,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Prove concurrent traffic remains isolated by user."
     )
-    add_common_args(parser, include_admin=True, include_models=True)
+    add_common_args(parser, include_admin=True, include_models=True, include_api_key=False)
+    parser.add_argument("--concurrency-user-a-id", default="demo_concurrency_a")
+    parser.add_argument("--concurrency-user-a-api-key", default="dev-token-demo-concurrency-a")
+    parser.add_argument("--concurrency-user-b-id", default="demo_concurrency_b")
+    parser.add_argument("--concurrency-user-b-api-key", default="dev-token-demo-concurrency-b")
     parser.add_argument("--requests-per-user", type=int, default=10)
     return parser
+
+
+def user_tokens(args: argparse.Namespace) -> dict[str, str]:
+    return {
+        args.concurrency_user_a_id: args.concurrency_user_a_api_key,
+        args.concurrency_user_b_id: args.concurrency_user_b_api_key,
+    }
 
 
 def send_chat(proxy_url: str, token: str, timeout_seconds: float, model: str, index: int) -> None:
@@ -50,7 +56,7 @@ def send_chat(proxy_url: str, token: str, timeout_seconds: float, model: str, in
     )
 
 
-async def run_calls(args: argparse.Namespace) -> list[CallResult]:
+async def run_calls(args: argparse.Namespace, tokens: dict[str, str]) -> list[CallResult]:
     async def one_call(user_id: str, token: str, index: int) -> CallResult:
         try:
             await asyncio.to_thread(
@@ -67,7 +73,7 @@ async def run_calls(args: argparse.Namespace) -> list[CallResult]:
 
     tasks = [
         one_call(user_id, token, index)
-        for user_id, token in USER_TOKENS.items()
+        for user_id, token in tokens.items()
         for index in range(args.requests_per_user)
     ]
     return await asyncio.gather(*tasks)
@@ -75,30 +81,29 @@ async def run_calls(args: argparse.Namespace) -> list[CallResult]:
 
 def main() -> int:
     args = build_parser().parse_args()
+    tokens = user_tokens(args)
     try:
         preflight_models(
             proxy=args.proxy_url,
-            api_key=args.api_key,
+            api_key=args.concurrency_user_a_api_key,
             required_models=[args.text_model],
             timeout_seconds=args.timeout_seconds,
         )
 
         with http_client(args.proxy_url, args.timeout_seconds) as client:
-            for user_id in USER_TOKENS:
+            for user_id in tokens:
                 clear_limits(client, args.admin_api_key, user_id)
-            before = {user_id: get_usage(client, token) for user_id, token in USER_TOKENS.items()}
+            before = {user_id: get_usage(client, token) for user_id, token in tokens.items()}
 
-        results = asyncio.run(run_calls(args))
+        results = asyncio.run(run_calls(args, tokens))
 
         with http_client(args.proxy_url, args.timeout_seconds) as client:
-            after = {user_id: get_usage(client, token) for user_id, token in USER_TOKENS.items()}
-            events = {
-                user_id: get_usage_events(client, token) for user_id, token in USER_TOKENS.items()
-            }
-            for user_id in USER_TOKENS:
+            after = {user_id: get_usage(client, token) for user_id, token in tokens.items()}
+            events = {user_id: get_usage_events(client, token) for user_id, token in tokens.items()}
+            for user_id in tokens:
                 clear_limits(client, args.admin_api_key, user_id)
 
-        for user_id in USER_TOKENS:
+        for user_id in tokens:
             user_results = [result for result in results if result.user_id == user_id]
             successes = sum(1 for result in user_results if result.ok)
             delta = usage_request_count(after[user_id]) - usage_request_count(before[user_id])
@@ -117,7 +122,7 @@ def main() -> int:
 
         isolation = all(
             all(event.get("user_id") == user_id for event in events[user_id].get("events", []))
-            for user_id in USER_TOKENS
+            for user_id in tokens
         )
         if not isolation:
             raise DemoFailure("usage events were not isolated by authenticated user")

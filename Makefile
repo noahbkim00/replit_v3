@@ -16,6 +16,23 @@ OLLAMA_MAX_CONCURRENCY ?= 4
 USER_A_TOKEN ?= dev-token-user-a
 USER_B_TOKEN ?= dev-token-user-b
 ADMIN_TOKEN ?= dev-token-admin
+DEMO_STANDARD_TOKEN ?= dev-token-demo-standard
+DEMO_STREAMING_TOKEN ?= dev-token-demo-streaming
+DEMO_USAGE_A_TOKEN ?= dev-token-demo-usage-a
+DEMO_USAGE_B_TOKEN ?= dev-token-demo-usage-b
+DEMO_LIMITS_TOKEN ?= dev-token-demo-limits
+DEMO_CONCURRENCY_A_TOKEN ?= dev-token-demo-concurrency-a
+DEMO_CONCURRENCY_B_TOKEN ?= dev-token-demo-concurrency-b
+DEMO_LOAD_TOKEN ?= dev-token-demo-load-open
+DEMO_LOAD_LIMITED_TOKEN ?= dev-token-demo-load-limited
+
+DEMO_USAGE_A_USER_ID ?= demo_usage_a
+DEMO_USAGE_B_USER_ID ?= demo_usage_b
+DEMO_LIMITS_USER_ID ?= demo_limits
+DEMO_CONCURRENCY_A_USER_ID ?= demo_concurrency_a
+DEMO_CONCURRENCY_B_USER_ID ?= demo_concurrency_b
+DEMO_LOAD_USER_ID ?= demo_load_open
+DEMO_LOAD_LIMITED_USER_ID ?= demo_load_limited
 
 TEXT_MODEL ?= llama3.2:1b
 VISION_MODEL ?= moondream
@@ -24,7 +41,7 @@ REQUESTS ?= 300
 CONCURRENCY ?= 50
 LIMITED_ALLOWED ?= 150
 
-DEMO_COMMON_ARGS = --proxy-url $(BASE_URL) --api-key $(USER_A_TOKEN) --timeout-seconds $(OLLAMA_TIMEOUT_SECONDS)
+DEMO_COMMON_ARGS = --proxy-url $(BASE_URL) --timeout-seconds $(OLLAMA_TIMEOUT_SECONDS)
 DEMO_MODEL_ARGS = --text-model $(TEXT_MODEL) --vision-model $(VISION_MODEL)
 DEMO_ADMIN_ARGS = --admin-api-key $(ADMIN_TOKEN)
 
@@ -61,7 +78,9 @@ help:
 	@printf "%s\n" ""
 	@printf "%s\n" "Common variables:"
 	@printf "%s\n" "  PORT=8000 BASE_URL=http://127.0.0.1:8000 DATABASE_PATH=data/proxy.sqlite3"
-	@printf "%s\n" "  USER_A_TOKEN=dev-token-user-a USER_B_TOKEN=dev-token-user-b ADMIN_TOKEN=dev-token-admin"
+	@printf "%s\n" "  Manual tokens: USER_A_TOKEN USER_B_TOKEN ADMIN_TOKEN"
+	@printf "%s\n" "  Demo tokens: DEMO_STANDARD_TOKEN DEMO_STREAMING_TOKEN DEMO_LIMITS_TOKEN"
+	@printf "%s\n" "  Demo users: DEMO_USAGE_A_USER_ID DEMO_CONCURRENCY_A_USER_ID DEMO_LOAD_USER_ID"
 
 install:
 	$(PYTHON) -m venv $(VENV)
@@ -133,22 +152,22 @@ demo:
 	esac
 
 demo-standard:
-	$(RUN) scripts/demo_standard.py $(DEMO_COMMON_ARGS) $(DEMO_MODEL_ARGS)
+	$(RUN) scripts/demo_standard.py $(DEMO_COMMON_ARGS) --api-key $(DEMO_STANDARD_TOKEN) $(DEMO_MODEL_ARGS)
 
 demo-streaming:
-	$(RUN) scripts/demo_streaming.py $(DEMO_COMMON_ARGS) $(DEMO_MODEL_ARGS)
+	$(RUN) scripts/demo_streaming.py $(DEMO_COMMON_ARGS) --api-key $(DEMO_STREAMING_TOKEN) $(DEMO_MODEL_ARGS)
 
 demo-usage:
-	$(RUN) scripts/demo_usage.py $(DEMO_COMMON_ARGS) $(DEMO_MODEL_ARGS) $(DEMO_ADMIN_ARGS)
+	$(RUN) scripts/demo_usage.py $(DEMO_COMMON_ARGS) $(DEMO_MODEL_ARGS) $(DEMO_ADMIN_ARGS) --usage-user-a-id $(DEMO_USAGE_A_USER_ID) --usage-user-a-api-key $(DEMO_USAGE_A_TOKEN) --usage-user-b-id $(DEMO_USAGE_B_USER_ID) --usage-user-b-api-key $(DEMO_USAGE_B_TOKEN)
 
 demo-limits:
-	$(RUN) scripts/demo_limits.py $(DEMO_COMMON_ARGS) $(DEMO_MODEL_ARGS) $(DEMO_ADMIN_ARGS) --user-id user_a
+	$(RUN) scripts/demo_limits.py $(DEMO_COMMON_ARGS) --api-key $(DEMO_LIMITS_TOKEN) $(DEMO_MODEL_ARGS) $(DEMO_ADMIN_ARGS) --user-id $(DEMO_LIMITS_USER_ID)
 
 demo-concurrency:
-	$(RUN) scripts/demo_concurrency.py $(DEMO_COMMON_ARGS) $(DEMO_MODEL_ARGS) $(DEMO_ADMIN_ARGS)
+	$(RUN) scripts/demo_concurrency.py $(DEMO_COMMON_ARGS) $(DEMO_MODEL_ARGS) $(DEMO_ADMIN_ARGS) --concurrency-user-a-id $(DEMO_CONCURRENCY_A_USER_ID) --concurrency-user-a-api-key $(DEMO_CONCURRENCY_A_TOKEN) --concurrency-user-b-id $(DEMO_CONCURRENCY_B_USER_ID) --concurrency-user-b-api-key $(DEMO_CONCURRENCY_B_TOKEN)
 
 demo-load:
-	$(RUN) scripts/demo_load_test.py --proxy-url $(BASE_URL) --api-key $(USER_A_TOKEN) --limited-api-key $(USER_B_TOKEN) --admin-api-key $(ADMIN_TOKEN) --model $(TEXT_MODEL) --requests $(REQUESTS) --concurrency $(CONCURRENCY) --limited-allowed $(LIMITED_ALLOWED) --timeout-seconds $(OLLAMA_TIMEOUT_SECONDS)
+	$(RUN) scripts/demo_load_test.py --proxy-url $(BASE_URL) --api-key $(DEMO_LOAD_TOKEN) --user-id $(DEMO_LOAD_USER_ID) --limited-api-key $(DEMO_LOAD_LIMITED_TOKEN) --limited-user-id $(DEMO_LOAD_LIMITED_USER_ID) --admin-api-key $(ADMIN_TOKEN) --model $(TEXT_MODEL) --requests $(REQUESTS) --concurrency $(CONCURRENCY) --limited-allowed $(LIMITED_ALLOWED) --timeout-seconds $(OLLAMA_TIMEOUT_SECONDS)
 
 demos: demo-standard demo-streaming demo-usage demo-limits
 
@@ -158,7 +177,7 @@ mock-ollama:
 	$(RUN) scripts/mock_ollama.py --host 127.0.0.1 --port 11435
 
 load-test:
-	$(RUN) scripts/load_test.py --mode proxy-overhead --proxy-url $(BASE_URL) --token $(USER_A_TOKEN) --admin-token $(ADMIN_TOKEN) --model $(TEXT_MODEL) --requests $(REQUESTS) --concurrency $(CONCURRENCY) --clear-limits
+	$(RUN) scripts/load_test.py --mode proxy-overhead --proxy-url $(BASE_URL) --token $(DEMO_LOAD_TOKEN) --admin-token $(ADMIN_TOKEN) --limit-user-id $(DEMO_LOAD_USER_ID) --model $(TEXT_MODEL) --requests $(REQUESTS) --concurrency $(CONCURRENCY) --clear-limits
 
 reset-demo-db:
 	@test "$(CONFIRM)" = "reset-demo-db" || { printf "%s\n" "Refusing to reset demo DB. Run: make reset-demo-db CONFIRM=reset-demo-db"; exit 2; }

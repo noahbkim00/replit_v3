@@ -85,6 +85,23 @@ curl http://127.0.0.1:8000/v1/models \
   -H "Authorization: Bearer dev-token-user-a"
 ```
 
+### Demo Tokens
+
+Demo targets use separate seeded users so usage totals, request windows, limits,
+and audit events from one demo do not affect another.
+
+| Demo | User ID | Token |
+| --- | --- | --- |
+| Standard | `demo_standard` | `dev-token-demo-standard` |
+| Streaming | `demo_streaming` | `dev-token-demo-streaming` |
+| Usage A | `demo_usage_a` | `dev-token-demo-usage-a` |
+| Usage B | `demo_usage_b` | `dev-token-demo-usage-b` |
+| Limits | `demo_limits` | `dev-token-demo-limits` |
+| Concurrency A | `demo_concurrency_a` | `dev-token-demo-concurrency-a` |
+| Concurrency B | `demo_concurrency_b` | `dev-token-demo-concurrency-b` |
+| Load Open | `demo_load_open` | `dev-token-demo-load-open` |
+| Load Limited | `demo_load_limited` | `dev-token-demo-load-limited` |
+
 ## Run The Proxy
 
 Default:
@@ -194,7 +211,8 @@ See `testing.md` for the full testing and demo workflow.
 - Ollama unavailable: start Ollama with `ollama serve` or open the Ollama app.
 - Missing models: run `make ollama-pull`.
 - Demo limit state is stale: run `make reset-demo-db CONFIRM=reset-demo-db`,
-  reseed the demo database, or wait 60 seconds.
+  reseed the demo database, or wait 60 seconds. This can happen when rerunning
+  the same limited demo within the rolling request window.
 
 `make doctor` is a quick local sanity check:
 

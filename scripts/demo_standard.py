@@ -19,7 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run text and vision non-streaming OpenAI-compatible calls through the proxy."
     )
-    add_common_args(parser)
+    add_common_args(parser, api_key_default="dev-token-demo-standard")
     return parser
 
 

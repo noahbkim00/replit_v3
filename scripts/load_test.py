@@ -50,9 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Label the run as a mock-upstream proxy overhead test or real Ollama test.",
     )
     parser.add_argument("--proxy-url", default="http://127.0.0.1:8000")
-    parser.add_argument("--token", default="dev-token-user-a")
+    parser.add_argument("--token", default="dev-token-demo-load-open")
     parser.add_argument("--admin-token", default="dev-token-admin")
-    parser.add_argument("--limit-user-id", default="user_a")
+    parser.add_argument("--limit-user-id", default="demo_load_open")
     parser.add_argument("--model", default="llama3.2:1b")
     parser.add_argument("--requests", type=int, default=500)
     parser.add_argument("--concurrency", type=int, default=100)
